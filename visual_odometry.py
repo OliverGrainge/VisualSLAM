@@ -56,8 +56,7 @@ class VisualOdometryBase(BaseOdometry):
         points_3d = cv2.convertPointsFromHomogeneous(points_4d.T)
         # Extract the 3D coordinates
         triangulated_points = points_3d.squeeze()
-        triangulated_features = features[0]
-        return triangulated_points, triangulated_features
+        return triangulated_points, matches
 
 
 
@@ -70,7 +69,8 @@ class VisualOdometry(VisualOdometryBase):
         self.current_pose = initial_pose
         self.poses.append(initial_pose)
         self.mapping_points = []
-        self.mapping_features = []
+        self.mapping_point_features = []
+        self.observation_points = []
         self.frame_count = 0
         self.old_frame = 0
         self.old_features = 0
@@ -91,10 +91,10 @@ class VisualOdometry(VisualOdometryBase):
                                 focal=self.intrinsic_calib[0,0],
                                 pp=(self.intrinsic_calib[0, 2], self.intrinsic_calib[1, 2]),
                                 )
-        points, point_features = self.triangulate_points(R, t, matches, features)
-        self.mapping_points.append(points)
+        points3d, points2d_view1, points2d_view2 = self.triangulate_points(R, t, matches, features)
         self.mapping_features.append(point_features)
 
+        print(points.shape, point_features.shape, self.current_pose.shape)
         transformation_matrix = self._from_transf(R, np.squeeze(t))
         return transformation_matrix
 
