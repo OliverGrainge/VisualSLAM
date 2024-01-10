@@ -1,5 +1,5 @@
-datasets_directory: "/home/oliver/Documents/github/Datasets"
-
+#datasets_directory: "/home/oliver/Documents/github/Datasets"
+datasets_directory: /Users/olivergrainge/Documents/github/Datasets
 feature_extractor: "orb" # either orb or sift
 feature_matcher: "bf"
 skip_frame: 1
