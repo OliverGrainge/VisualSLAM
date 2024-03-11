@@ -83,7 +83,7 @@ class KittiDataset:
     def __len__(self):
         return len(self.image_paths_left)
 
-    def load_image(self, idx: int) -> Tuple[Image.Image]:
+    def load_images(self, idx: int) -> Tuple[Image.Image]:
         img_left = Image.open(self.image_paths_left[idx])
         img_right = Image.open(self.image_paths_right[idx])
         return (img_left, img_right)
@@ -91,7 +91,7 @@ class KittiDataset:
     def initial_pose(self):
         return self.poses[0]
 
-    def projection_calib(self) -> Tuple[np.ndarray]:
+    def projection_matrix(self) -> Tuple[np.ndarray]:
         return (self.P_l, self.P_r)
 
     def intrinsic_calib(self) -> Tuple[np.ndarray]:
