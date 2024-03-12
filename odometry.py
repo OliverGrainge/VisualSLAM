@@ -3,6 +3,8 @@ import numpy as np
 from PIL import Image
 from typing import Tuple
 from collections import deque
+from point_features import SIFT
+from typing import List
 
 
 class Point:
@@ -16,7 +18,7 @@ class Point:
         self.image_right = image_right
         self.left_projection = left_projection
 
-        self.feature_detector = cv2.SIFT_create()
+        self.feature_detector = SIFT()
 
         self.left_points2d_pose = None
         self.right_points2d_pose = None
@@ -35,25 +37,15 @@ class Point:
         return transformation
 
     def featurepoints2d(self) -> None:
-        image = np.array(self.image_left)
-        if image.ndim > 2:
-            gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-        else:
-            gray = image
         (
             self.left_points2d_pose,
             self.left_points2d_desc,
-        ) = self.feature_detector.detectAndCompute(gray, None)
+        ) = self.feature_detector(self.image_left)
 
-        image = np.array(self.image_right)
-        if image.ndim > 2:
-            gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-        else:
-            gray = image
         (
             self.right_points2d_pose,
             self.right_points2d_desc,
-        ) = self.feature_detector.detectAndCompute(gray, None)
+        ) = self.feature_detector(self.image_right)
 
     def projection_matrix(self) -> np.ndarray:
         return self.left_projection
@@ -92,9 +84,11 @@ class PosePoint(Point):
         self.triangulate()
 
     def triangulate(self):
-        matches = self.matcher.knnMatch(self.left_points2d_desc, self.right_points2d_desc, k=2)
-        #dist_fn = lambda x: x.distance
-        #matches = sorted(matches, key=dist_fn)
+        matches = self.matcher.knnMatch(
+            self.left_points2d_desc, self.right_points2d_desc, k=2
+        )
+        # dist_fn = lambda x: x.distance
+        # matches = sorted(matches, key=dist_fn)
         # Apply Lowe's ratio test
         good_matches = []
         ratio_threshold = 0.75  # Commonly used threshold; adjust based on your dataset
@@ -102,6 +96,7 @@ class PosePoint(Point):
             if m.distance < ratio_threshold * n.distance:
                 good_matches.append(m)
         matches = good_matches
+        """
         matched_image = cv2.drawMatches(
             np.array(self.image_left),
             self.left_points2d_pose,
@@ -113,6 +108,7 @@ class PosePoint(Point):
         cv2.imshow("Matched Points", matched_image)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
+        """
         points_left = np.zeros((len(matches), 2), dtype=self.left_points2d_desc.dtype)
         points_right = np.zeros((len(matches), 2), dtype=self.right_points2d_desc.dtype)
         points_desc = np.zeros(
@@ -130,7 +126,7 @@ class PosePoint(Point):
             self.left_projection,
             self.right_projection,
             points_left_transposed,
-            points_right_transposed
+            points_right_transposed,
         )
 
         points_3d = point_4d_hom[:3] / point_4d_hom[3]
@@ -179,7 +175,7 @@ class OdometryPoint(PosePoint):
     def relative_transformation(self, points3d: np.ndarray, desc3d: np.ndarray):
         matches = self.matcher.knnMatch(desc3d, self.left_points2d_desc, k=2)
         dist_fn = lambda x: x.distance
-        #matches = sorted(matches, key=dist_fn)
+        # matches = sorted(matches, key=dist_fn)
         good_matches = []
         ratio_threshold = 0.75  # Commonly used threshold; adjust based on your dataset
         for m, n in matches:
@@ -200,8 +196,11 @@ class OdometryPoint(PosePoint):
         dist_coeffs = np.zeros(4)
 
         success, rotation_vector, translation_vector, inliers = cv2.solvePnPRansac(
-            points3d_sorted, points2d_sorted, K_l, dist_coeffs,
-            flags=cv2.SOLVEPNP_ITERATIVE
+            points3d_sorted,
+            points2d_sorted,
+            K_l,
+            dist_coeffs,
+            flags=cv2.SOLVEPNP_ITERATIVE,
         )
         if not success:
             raise Exception("PnP algorithm failed")
@@ -211,20 +210,82 @@ class OdometryPoint(PosePoint):
         return transformation
 
 
+class BundleAdjustment:
+    def __init__(
+        self,
+    ):
+        self.matcher = cv2.BFMatcher(cv2.NORM_L2)
+
+    @staticmethod
+    def reprojection_error(
+        params,
+        n_cameras,
+        n_points,
+        camera_indices,
+        point_indices,
+        observed_points,
+        camera_model,
+    ):
+        """Calculate reprojection errors."""
+        camera_params = params[:n_cameras * 6].reshape((n_cameras, 6))
+        points_3d = params[n_cameras * 6:].reshape((n_points, 3))
+        points_projected = np.zeros(observed_points.shape)
+
+        for i in range(len(camera_indices)):
+            camera_index = camera_indices[i]
+            point_index = point_indices[i]
+            R, _ = cv2.Rodrigues(camera_params[camera_index, :3])
+            t = camera_params[camera_index, 3:6].reshape(3, 1)
+            point_3d_hom = np.hstack([points_3d[point_index], [1]])
+            point_2d_hom = camera_model @ (R @ point_3d_hom[:3] + t)
+            points_projected[i] = point_2d_hom[:2] / point_2d_hom[2]
+
+        return (points_projected - observed_points).ravel()
+
+    def data_association(self, points2d_desc: List[np.ndarray], points3d_desc: np.ndarray) -> Tuple[np.ndarray]:
+        point_indices = []
+        camera_indices = []
+        for camera_idx, desc2d in enumerate(points2d_desc):
+            matches = self.matcher.knnMatch(desc2d, points3d_desc, k=2)
+            good_matches = []
+            ratio_threshold = 0.75  # Commonly used threshold; adjust based on your dataset
+            for m, n in matches:
+                if m.distance < ratio_threshold * n.distance:
+                    good_matches.append(m)
+            point_indices += [match.trainIdx for match in good_matches]
+            camera_indices += [camera_idx for _ in good_matches]
+        return camera_indices, point_indices
+
+    @staticmethod
+    def poses2params(poses: List[np.ndarray]) -> np.ndarray:
+        params = []
+        for pose in poses:
+            translation = list(pose[:3, 3])
+            rotation, _ = cv2.Rodrigues(pose[:3, :3])
+            rotation = list(rotation)
+            params += rotation
+            params += translation
+        return np.array(params)
+
+
 class StereoOdometry:
     def __init__(
         self,
         left_projection: np.ndarray,
         right_projection: np.ndarray,
         initial_pose: np.ndarray,
-        max_window: int = 10,
+        window_size: int = 10,
     ):
         self.left_projection = left_projection
         self.right_projection = right_projection
         self.initial_pose = initial_pose
+        self.window_size = window_size
 
-        self.poses = []
+        self.poses = [initial_pose]
+        self.transformations = []
         self.odometry_points = []
+        self.point_cloud_pos = []
+        self.point_could_desc = []
 
     def process_images(self, image_left: Image.Image, image_right: Image.Image):
         odom_point = OdometryPoint(
@@ -238,7 +299,9 @@ class StereoOdometry:
                 self.odometry_points[-1].points3d_pos,
                 self.odometry_points[-1].points3d_desc,
             )
-            self.poses.append(transformation)
+            transformation = np.linalg.inv(transformation)
+            self.transformations.append(transformation)
+            self.poses.append(self.poses[-1] @ transformation)
             self.odometry_points.append(odom_point)
 
     def get_trajectory(self):
