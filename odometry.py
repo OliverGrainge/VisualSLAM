@@ -10,37 +10,37 @@ from scipy.optimize import least_squares
 import time
 
 
-class Point:
+def homgenize(rotation: np.ndarray, translation: np.ndarray) -> np.ndarray:
+    transformation = np.eye(4)
+    translation = translation.squeeze()
+    if len(translation) == 4:
+        translation = translation[:3] / translation[3]
+    transformation[:3, :3] = rotation.squeeze()
+    transformation[:3, 3] = translation.squeeze()
+    return transformation
+
+
+class OdometryPoint:
     def __init__(
         self,
         image_left: Image.Image,
         image_right: Image.Image,
         left_projection: np.ndarray,
+        right_projection: np.ndarray,
+        Kl: np.ndarray,
+        Kr: np.ndarray,
     ):
         self.image_left = image_left
         self.image_right = image_right
         self.left_projection = left_projection
+        self.right_projection = right_projection
 
+        self.Kl = Kl
+        self.Kr = Kr
         self.feature_detector = SIFT()
-
-        self.left_points2d_pose = None
-        self.right_points2d_pose = None
-        self.left_points2d_desc = None
-        self.right_points2d_desc = None
-        self.points3d = None
-        self.point_descriptors = None
-
+        self.matcher = cv2.BFMatcher()
         self.featurepoints2d()
-
-    @staticmethod
-    def homgenize(rotation: np.ndarray, translation: np.ndarray) -> np.ndarray:
-        transformation = np.eye(4)
-        translation = translation.squeeze()
-        if len(translation) == 4:
-            translation = translation[:3] / translation[3]
-        transformation[:3, :3] = rotation.squeeze()
-        transformation[:3, 3] = translation.squeeze()
-        return transformation
+        self.triangulate()
 
     def featurepoints2d(self) -> None:
         (
@@ -52,42 +52,6 @@ class Point:
             self.right_points2d_pose,
             self.right_points2d_desc,
         ) = self.feature_detector(self.image_right)
-
-    def projection_matrix(self) -> np.ndarray:
-        return self.left_projection
-
-    def rotation(
-        self,
-    ) -> np.ndarray:
-        K, R, t, _, _, _, _ = cv2.decomposeProjectionMatrix(self.left_projection)
-        return R
-
-    def translation(
-        self,
-    ) -> np.ndarray:
-        K, R, t, _, _, _, _ = cv2.decomposeProjectionMatrix(self.left_projection)
-        return t
-
-
-class PosePoint(Point):
-    def __init__(
-        self,
-        image_left: Image.Image,
-        image_right: Image.Image,
-        left_projection: np.ndarray,
-        right_projection: np.ndarray,
-    ):
-        super().__init__(
-            image_left=image_left,
-            image_right=image_right,
-            left_projection=left_projection,
-        )
-        self.right_projection = right_projection
-        self.matcher = cv2.BFMatcher(cv2.NORM_L2)
-        self.points3d_pos = None
-        self.points2d_desc = None
-
-        self.triangulate()
 
     def triangulate(self):
         matches = self.matcher.knnMatch(
@@ -136,81 +100,67 @@ class PosePoint(Point):
         self.points3d_pos = points_3d.T
         self.points3d_desc = points_desc
 
-    def projection_matrix(self) -> Tuple[np.ndarray]:
-        return (self.left_projection, self.right_projection)
 
-    def rotation(
-        self,
-    ) -> Tuple[np.ndarray]:
-        Kl, Rl, tl, _, _, _, _ = cv2.decomposeProjectionMatrix(self.left_projection)
-        Kr, Rr, tr, _, _, _, _ = cv2.decomposeProjectionMatrix(self.right_projection)
-        return Rl, Rr
+def get_matches(matcher, desc1: np.ndarray, desc2: np.ndarray, top_N=False):
+    matches = matcher.knnMatch(desc1, desc2, k=2)
+    # matches = sorted(matches, key=dist_fn)
+    good_matches = []
+    ratio_threshold = 0.75  # Commonly used threshold; adjust based on your dataset
+    for m, n in matches:
+        if m.distance < ratio_threshold * n.distance:
+            good_matches.append(m)
+    matches = good_matches
 
-    def translation(
-        self,
-    ) -> Tuple[np.ndarray]:
-        Kl, Rl, tl, _, _, _, _ = cv2.decomposeProjectionMatrix(self.left_projection)
-        Kr, Rr, tr, _, _, _, _ = cv2.decomposeProjectionMatrix(self.right_projection)
-        return tl, tr
+    #if top_N is not None:
+    #    dist_fn = lambda x: x.distance
+    #    matches = sorted(matches, key=dist_fn)
+    #    matches = matches[:top_N]
+    return matches
 
-    def intrinsic_camera_cal(self) -> Tuple[np.ndarray]:
-        Kl, Rl, tl, _, _, _, _ = cv2.decomposeProjectionMatrix(self.left_projection)
-        Kr, Rr, tr, _, _, _, _ = cv2.decomposeProjectionMatrix(self.right_projection)
-        return Kl, Kr
+def project_points(points_3D, camera_matrix, rvec, tvec):
+    # Convert rotation vector to rotation matrix
+    R, _ = cv2.Rodrigues(rvec)
+    # Transform 3D points to the camera coordinate system
+    points_3D = points_3D.reshape(-1, 3)  # Ensure points_3D is Nx3
+    points_cam = R @ points_3D.T + tvec.reshape(-1, 1)
+    # Project points onto the image plane
+    points_proj = camera_matrix @ points_cam
+    # Apply perspective division
+    points_proj = points_proj[:2] / points_proj[2]
+    # Transpose to get the final 2D points in shape Nx2
+    points_2D = points_proj.T
+    return points_2D
 
 
-class OdometryPoint(PosePoint):
-    def __init__(
-        self,
-        image_left: Image.Image,
-        image_right: Image.Image,
-        left_projection: np.ndarray,
-        right_projection: np.ndarray,
-    ):
-        super().__init__(
-            image_left=image_left,
-            image_right=image_right,
-            left_projection=left_projection,
-            right_projection=right_projection,
-        )
-        self.transformation = None
+def relative_transformation(
+    matcher, K_l, points3d_pos, points3d_desc, points2d_pos, points2d_desc
+):
+    matches = get_matches(matcher, points3d_desc, points2d_desc)
+    points3d_sorted = np.zeros((len(matches), 3), dtype=np.float32)
+    points2d_sorted = np.zeros((len(matches), 2), dtype=np.float32)
+    points_desc = np.zeros((len(matches), points3d_desc.shape[1]), dtype=np.float32)
 
-    def relative_transformation(self, points3d: np.ndarray, desc3d: np.ndarray):
-        matches = self.matcher.knnMatch(desc3d, self.left_points2d_desc, k=2)
-        dist_fn = lambda x: x.distance
-        # matches = sorted(matches, key=dist_fn)
-        good_matches = []
-        ratio_threshold = 0.75  # Commonly used threshold; adjust based on your dataset
-        for m, n in matches:
-            if m.distance < ratio_threshold * n.distance:
-                good_matches.append(m)
-        matches = good_matches
+    for i, match in enumerate(matches):
+        points3d_sorted[i, :] = points3d_pos[match.queryIdx]
+        points2d_sorted[i, :] = points2d_pos[match.trainIdx].pt
+        points_desc[i, :] = points3d_desc[match.queryIdx]
 
-        points3d_sorted = np.zeros((len(matches), 3), dtype=np.float32)
-        points2d_sorted = np.zeros((len(matches), 2), dtype=np.float32)
-        points_desc = np.zeros((len(matches), desc3d.shape[1]), dtype=np.float32)
+    success, rotation_vector, translation_vector, inliers = cv2.solvePnPRansac(
+        points3d_sorted,
+        points2d_sorted,
+        K_l,
+        np.zeros(4),
+        flags=cv2.SOLVEPNP_ITERATIVE,
+    )
+    if not success:
+        raise Exception("PnP algorithm failed")
 
-        for i, match in enumerate(matches):
-            points3d_sorted[i, :] = points3d[match.queryIdx]
-            points2d_sorted[i, :] = self.left_points2d_pose[match.trainIdx].pt
-            points_desc[i, :] = desc3d[match.queryIdx]
+    rotation_matrix, _ = cv2.Rodrigues(rotation_vector)
+    transformation = homgenize(rotation_matrix, translation_vector)
+    return transformation
 
-        K_l, K_r = self.intrinsic_camera_cal()
-        dist_coeffs = np.zeros(4)
 
-        success, rotation_vector, translation_vector, inliers = cv2.solvePnPRansac(
-            points3d_sorted,
-            points2d_sorted,
-            K_l,
-            dist_coeffs,
-            flags=cv2.SOLVEPNP_ITERATIVE,
-        )
-        if not success:
-            raise Exception("PnP algorithm failed")
-        rotation_matrix, _ = cv2.Rodrigues(rotation_vector)
-        transformation = self.homgenize(rotation_matrix, translation_vector)
-        self.transformation = transformation
-        return transformation
+
 
 
 class StereoOdometry:
@@ -218,46 +168,96 @@ class StereoOdometry:
         self,
         left_projection: np.ndarray,
         right_projection: np.ndarray,
+        Kl: np.ndarray,
+        Kr: np.ndarray,
         initial_pose: np.ndarray,
         window_size: int = 2,
     ):
         self.left_projection = left_projection
         self.right_projection = right_projection
+        self.left_to_right = self.right_projection - self.left_projection
         self.initial_pose = initial_pose
         self.window_size = window_size
+        self.Kl = Kl
+        self.Kr = Kr
 
         self.poses = [initial_pose]
         self.transformations = []
         self.cumulative_transfrom = None
-        self.odometry_points = []
+        self.points = []
+
+        self.matcher = cv2.BFMatcher()
 
     def process_images(self, image_left: Image.Image, image_right: Image.Image) -> None:
-        if len(self.odometry_points) == 0:
-            odom_point = OdometryPoint(
-            image_left, image_right, self.left_projection, self.right_projection
+        if len(self.points) == 0:
+            point = OdometryPoint(
+                image_left,
+                image_right,
+                self.left_projection,
+                self.right_projection,
+                self.Kl,
+                self.Kr,
             )
-            self.odometry_points.append(odom_point)
-            return
+            self.points.append(point)
         else:
-            odom_point = OdometryPoint(
-            image_left, image_right, self.left_projection, self.right_projection
+            point = OdometryPoint(
+                image_left,
+                image_right,
+                self.left_projection,
+                self.right_projection,
+                self.Kl,
+                self.Kr,
             )
-            transformation = odom_point.relative_transformation(
-                self.odometry_points[-1].points3d_pos,
-                self.odometry_points[-1].points3d_desc,
+            transformation = relative_transformation(
+                self.matcher,
+                self.Kl,
+                self.points[-1].points3d_pos,
+                self.points[-1].points3d_desc,
+                point.left_points2d_pose,
+                point.left_points2d_desc,
             )
             transformation = np.linalg.inv(transformation)
             self.transformations.append(transformation)
-            if self.cumulative_transfrom is None: 
-                self.cumulative_transfrom = transformation 
-            else: 
+            if self.cumulative_transfrom is None:
+                self.cumulative_transfrom = transformation
+            else:
                 self.cumulative_transfrom = self.cumulative_transfrom @ transformation
-            #self.poses.append(self.poses[-1] @ transformation)
-            self.poses.append(self.initial_pose @ self.cumulative_transfrom)
-            self.odometry_points.append(odom_point)
-            #self.bundle_adjust()
-
-
+            # self.poses.append(self.poses[-1] @ transformation)
+            new_pose = self.initial_pose @ self.cumulative_transfrom
+            self.left_projection = self.Kl @ self.cumulative_transfrom[:3, :]
+            self.right_projection = self.Kr @ (self.cumulative_transfrom[:3, :] + self.left_to_right[:3, :])
+        
+            #=====================================================================================================
+            self.left_projection = np.hstack([transformation[:3, :3], transformation[:3, 3].reshape(-1, 1)])
+            self.left_projection = self.Kl @ self.left_projection
+            self.right_projection = self.Kr @ self.right_projection 
+            self.right_projection = self.left_projection + self.left_to_right
+            """
+                # Convert rotation vector to rotation matrix
+            R = transformation[:3, :3]
+            # Transform 3D points to the camera coordinate system
+            points_3D = points_3D.reshape(-1, 3)  # Ensure points_3D is Nx3
+            points_cam = R @ points_3D.T + tvec.reshape(-1, 1)
+            # Project points onto the image plane
+            points_proj = camera_matrix @ points_cam
+            # Apply perspective division
+            points_proj = points_proj[:2] / points_proj[2]
+            # Transpose to get the final 2D points in shape Nx2
+            points_2D = points_proj.T
+            return points_2D
+            """
+            #=====================================================================================================
+            point = OdometryPoint(
+                image_left,
+                image_right,
+                self.left_projection,
+                self.right_projection,
+                self.Kl,
+                self.Kr,
+            )
+            self.poses.append(new_pose)
+            self.points.append(point)
+            # self.bundle_adjust()
 
     def bundle_adjust(self) -> None:
         # 2d array of the 3d point positions
@@ -292,55 +292,54 @@ class StereoOdometry:
         # camera_indices[0, 0, 0, 0, 1, 1, 1, 1, .... n_cameras, n_cameras]
         # points_indices indicates which 3d point the descriptor coressponds to
         # point_indices[1, 4, 32, 14, 58, ... ]
-        points2d_pos, camera_indices, point_indices = bundle_adjustment.data_association(
+        (
+            points2d_pos,
+            camera_indices,
+            point_indices,
+        ) = bundle_adjustment.data_association(
             self.odometry_points[-1].matcher, points2d_pos, points2d_desc, points3d_desc
         )
 
         error = bundle_adjustment.reprojection_error(
-            params, 
-            n_cameras, 
+            params, n_cameras, camera_indices, point_indices, points2d_pos, camera_model
+        )
+
+        st = time.time()
+        result = least_squares(
+            bundle_adjustment.reprojection_error,
+            params,
+            args=(n_cameras, camera_indices, point_indices, points2d_pos, camera_model),
+            verbose=0,
+            method="lm",
+            ftol=1e-06,
+            xtol=1e-06,
+            gtol=1e-06,
+            max_nfev=200,
+        )
+        # **options)
+        optimized_params = result.x
+
+        optimized_error = bundle_adjustment.reprojection_error(
+            optimized_params,
+            n_cameras,
             camera_indices,
             point_indices,
             points2d_pos,
-            camera_model
+            camera_model,
         )
-
-
-        st = time.time()
-        result = least_squares(bundle_adjustment.reprojection_error,
-                params,
-                args=(
-                    n_cameras, 
-                    camera_indices, 
-                    point_indices,
-                    points2d_pos,
-                    camera_model
-                ),
-                verbose=0,
-                method='lm', 
-                ftol=1e-06,
-                xtol=1e-06,
-                gtol=1e-06, 
-                max_nfev=200)
-                #**options)
-        optimized_params = result.x 
-        
-        optimized_error = bundle_adjustment.reprojection_error(
-            optimized_params, 
-            n_cameras, 
-            camera_indices, 
-            point_indices, 
-            points2d_pos, 
-            camera_model
+        poses, points3d_pos = bundle_adjustment.params2points(
+            optimized_params, n_cameras
         )
-        poses, points3d_pos = bundle_adjustment.params2points(optimized_params, n_cameras)
-        self.poses[-self.window_size:] = poses
-        #self.odometry_points[-1].points3d_pos = points3d_pos
+        self.poses[-self.window_size :] = poses
+        # self.odometry_points[-1].points3d_pos = points3d_pos
         et = time.time()
         print("=========")
-        print("optimized Adjustment Error:", np.abs(optimized_error).mean(), np.abs(error).mean(), st-et)
-
-    
+        print(
+            "optimized Adjustment Error:",
+            np.abs(optimized_error).mean(),
+            np.abs(error).mean(),
+            st - et,
+        )
 
     def get_trajectory(self):
         return self.poses

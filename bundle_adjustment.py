@@ -8,7 +8,7 @@ def data_association(
     points2d_pos: List[np.ndarray],
     points2d_desc: List[np.ndarray],
     points3d_desc: np.ndarray,
-    max_matches_per_image: int=100
+    max_matches_per_image: int = 100,
 ) -> Tuple[np.ndarray]:
     point_indices = []
     camera_indices = []
@@ -19,10 +19,12 @@ def data_association(
         ratio_threshold = 0.75  # Commonly used threshold; adjust based on your dataset
         for m, n in matches:
             if m.distance < ratio_threshold * n.distance:
-                        good_matches.append(m)
+                good_matches.append(m)
         good_matches = sorted(good_matches, key=lambda x: x.distance)
         good_matches = good_matches[:max_matches_per_image]
-        observations += [list(points2d_pos[camera_idx][match.queryIdx]) for match in good_matches]
+        observations += [
+            list(points2d_pos[camera_idx][match.queryIdx]) for match in good_matches
+        ]
         point_indices += [match.trainIdx for match in good_matches]
         camera_indices += [camera_idx for _ in good_matches]
     return np.array(observations), np.array(camera_indices), np.array(point_indices)
@@ -39,14 +41,15 @@ def points2params(poses: List[np.ndarray], points3d_pos: np.ndarray) -> np.ndarr
     params += list(points3d_pos.flatten())
     return np.array(params)
 
+
 def params2points(params: np.ndarray, n_poses: int) -> Tuple[np.ndarray]:
     poses = [np.eye(4) for _ in range(n_poses)]
-    camera_params = params[:n_poses * 6]
-    point_params = params[n_poses * 6:]
+    camera_params = params[: n_poses * 6]
+    point_params = params[n_poses * 6 :]
     for camera_idx in range(n_poses):
-        rot, _ = cv2.Rodrigues(camera_params[camera_idx*6:camera_idx*6 + 3])
-        trans = camera_params[camera_idx*6 + 3: camera_idx*6 + 6]
-        poses[camera_idx][:3, :3] = rot 
+        rot, _ = cv2.Rodrigues(camera_params[camera_idx * 6 : camera_idx * 6 + 3])
+        trans = camera_params[camera_idx * 6 + 3 : camera_idx * 6 + 6]
+        poses[camera_idx][:3, :3] = rot
         poses[camera_idx][:3, 3] = trans
     points3d_pos = point_params.reshape(-1, 3)
     return poses, points3d_pos
@@ -68,7 +71,7 @@ def reprojection_error(
     point_indices: np.ndarray,
     points2d: np.ndarray,
     camera_model: np.ndarray,
-):  
+):
     residuals = []
     points3d = params[n_cameras * 6 :].reshape(-1, 3)
     for camera_idx in range(n_cameras):
@@ -84,4 +87,3 @@ def reprojection_error(
         res = camera_observations - projected_points
         residuals += list(res.flatten())
     return np.array(residuals)
-

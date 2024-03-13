@@ -9,8 +9,9 @@ class Evaluate:
         self.config = utils.get_config()
         self.dataset = dataset(self.config)
         left_proj, right_proj = self.dataset.projection_matrix()
+        Kl, Kr = self.dataset.intrinsic_calib()
         initial_pos = self.dataset.initial_pose()
-        self.odometry = odometry(left_proj, right_proj, initial_pos)
+        self.odometry = odometry(left_proj, right_proj, Kl, Kr, initial_pos)
 
         if num_samples is None:
             num_samples = len(self.dataset)
