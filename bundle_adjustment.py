@@ -8,7 +8,7 @@ def data_association(
     points2d_pos: List[np.ndarray],
     points2d_desc: List[np.ndarray],
     points3d_desc: np.ndarray,
-    max_matches_per_image: int=10
+    max_matches_per_image: int=100
 ) -> Tuple[np.ndarray]:
     point_indices = []
     camera_indices = []
@@ -40,16 +40,16 @@ def points2params(poses: List[np.ndarray], points3d_pos: np.ndarray) -> np.ndarr
     return np.array(params)
 
 def params2points(params: np.ndarray, n_poses: int) -> Tuple[np.ndarray]:
-    poses = [np.eye(4)]
-    camera_params = params[:n_poses *6]
+    poses = [np.eye(4) for _ in range(n_poses)]
+    camera_params = params[:n_poses * 6]
     point_params = params[n_poses * 6:]
     for camera_idx in range(n_poses):
         rot, _ = cv2.Rodrigues(camera_params[camera_idx*6:camera_idx*6 + 3])
         trans = camera_params[camera_idx*6 + 3: camera_idx*6 + 6]
         poses[camera_idx][:3, :3] = rot 
         poses[camera_idx][:3, 3] = trans
-    point_params = point_params.reshape(-1, 3)
-    return poses, point_params
+    points3d_pos = point_params.reshape(-1, 3)
+    return poses, points3d_pos
 
 
 """

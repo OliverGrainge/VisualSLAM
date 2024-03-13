@@ -27,7 +27,7 @@ class Evaluate:
         gt = self.dataset.ground_truth()
         gt_pose = np.array([self.translation_vector(pose) for pose in gt])
         tracked_pose = np.array(
-            [self.translation_vector(pose) for pose in self.odometry.poses]
+            [self.translation_vector(pose) for pose in self.odometry.get_trajectory()]
         )
 
         fig = plt.figure()

@@ -35,6 +35,9 @@ class Point:
     @staticmethod
     def homgenize(rotation: np.ndarray, translation: np.ndarray) -> np.ndarray:
         transformation = np.eye(4)
+        translation = translation.squeeze()
+        if len(translation) == 4:
+            translation = translation[:3] / translation[3]
         transformation[:3, :3] = rotation.squeeze()
         transformation[:3, 3] = translation.squeeze()
         return transformation
@@ -90,9 +93,6 @@ class PosePoint(Point):
         matches = self.matcher.knnMatch(
             self.left_points2d_desc, self.right_points2d_desc, k=2
         )
-        # dist_fn = lambda x: x.distance
-        # matches = sorted(matches, key=dist_fn)
-        # Apply Lowe's ratio test
         good_matches = []
         ratio_threshold = 0.75  # Commonly used threshold; adjust based on your dataset
         for m, n in matches:
@@ -150,12 +150,12 @@ class PosePoint(Point):
         self,
     ) -> Tuple[np.ndarray]:
         Kl, Rl, tl, _, _, _, _ = cv2.decomposeProjectionMatrix(self.left_projection)
-        Kr, Rr, tr, _, _, _, _ = cv2.decomposeProjectionMatrix(self.left_projection)
+        Kr, Rr, tr, _, _, _, _ = cv2.decomposeProjectionMatrix(self.right_projection)
         return tl, tr
 
     def intrinsic_camera_cal(self) -> Tuple[np.ndarray]:
         Kl, Rl, tl, _, _, _, _ = cv2.decomposeProjectionMatrix(self.left_projection)
-        Kr, Rr, tr, _, _, _, _ = cv2.decomposeProjectionMatrix(self.left_projection)
+        Kr, Rr, tr, _, _, _, _ = cv2.decomposeProjectionMatrix(self.right_projection)
         return Kl, Kr
 
 
@@ -219,7 +219,7 @@ class StereoOdometry:
         left_projection: np.ndarray,
         right_projection: np.ndarray,
         initial_pose: np.ndarray,
-        window_size: int = 3,
+        window_size: int = 2,
     ):
         self.left_projection = left_projection
         self.right_projection = right_projection
@@ -228,43 +228,48 @@ class StereoOdometry:
 
         self.poses = [initial_pose]
         self.transformations = []
+        self.cumulative_transfrom = None
         self.odometry_points = []
-        self.point_cloud_pos = []
-        self.point_could_desc = []
 
     def process_images(self, image_left: Image.Image, image_right: Image.Image) -> None:
-        odom_point = OdometryPoint(
-            image_left, image_right, self.left_projection, self.right_projection
-        )
         if len(self.odometry_points) == 0:
+            odom_point = OdometryPoint(
+            image_left, image_right, self.left_projection, self.right_projection
+            )
             self.odometry_points.append(odom_point)
             return
         else:
+            odom_point = OdometryPoint(
+            image_left, image_right, self.left_projection, self.right_projection
+            )
             transformation = odom_point.relative_transformation(
                 self.odometry_points[-1].points3d_pos,
                 self.odometry_points[-1].points3d_desc,
             )
             transformation = np.linalg.inv(transformation)
             self.transformations.append(transformation)
-            self.poses.append(self.poses[-1] @ transformation)
+            if self.cumulative_transfrom is None: 
+                self.cumulative_transfrom = transformation 
+            else: 
+                self.cumulative_transfrom = self.cumulative_transfrom @ transformation
+            #self.poses.append(self.poses[-1] @ transformation)
+            self.poses.append(self.initial_pose @ self.cumulative_transfrom)
             self.odometry_points.append(odom_point)
-            self.bundle_adjust()
+            #self.bundle_adjust()
+
+
 
     def bundle_adjust(self) -> None:
         # 2d array of the 3d point positions
-        max_3d_points = 5
+        max_3d_points = 100
         points3d_pos = self.odometry_points[-1].points3d_pos
-        points3d_pos = points3d_pos[:max_3d_points]
         # 2d array of the 3d point descriptors
         points3d_desc = self.odometry_points[-1].points3d_desc
         points3d_desc = points3d_desc[:max_3d_points]
         # 3x3 matrix of the camera intrinsic parameters
         camera_model, _ = self.odometry_points[-1].intrinsic_camera_cal()
         # A list of the left camera project matrices
-        camera_poses = [
-            pt.left_projection
-            for pt in self.odometry_points[-self.window_size :]
-        ]
+        camera_poses = self.poses[-self.window_size :]
         # number of camera images in the bundle
         n_cameras = len(camera_poses)
         # a list of the 2d observation descriptors
@@ -300,38 +305,42 @@ class StereoOdometry:
             camera_model
         )
 
-        
+
         st = time.time()
-        try:
-            result = least_squares(bundle_adjustment.reprojection_error,
-                    params,
-                    args=(
-                        n_cameras, 
-                        camera_indices, 
-                        point_indices,
-                        points2d_pos,
-                        camera_model
-                    ),
-                    verbose=0,
-                    method='lm')
-                    #**options)
-            optimized_params = result.x 
-            optimized_error = bundle_adjustment.reprojection_error(
-                optimized_params, 
-                n_cameras, 
-                camera_indices, 
-                point_indices, 
-                points2d_pos, 
-                camera_model
-            )
-            et = time.time()
-
-            print("optimized Adjustment Error:", np.abs(optimized_error).mean(), np.abs(error).mean(), st-et)
-        except: 
-            pass
+        result = least_squares(bundle_adjustment.reprojection_error,
+                params,
+                args=(
+                    n_cameras, 
+                    camera_indices, 
+                    point_indices,
+                    points2d_pos,
+                    camera_model
+                ),
+                verbose=0,
+                method='lm', 
+                ftol=1e-06,
+                xtol=1e-06,
+                gtol=1e-06, 
+                max_nfev=200)
+                #**options)
+        optimized_params = result.x 
         
+        optimized_error = bundle_adjustment.reprojection_error(
+            optimized_params, 
+            n_cameras, 
+            camera_indices, 
+            point_indices, 
+            points2d_pos, 
+            camera_model
+        )
+        poses, points3d_pos = bundle_adjustment.params2points(optimized_params, n_cameras)
+        self.poses[-self.window_size:] = poses
+        #self.odometry_points[-1].points3d_pos = points3d_pos
+        et = time.time()
+        print("=========")
+        print("optimized Adjustment Error:", np.abs(optimized_error).mean(), np.abs(error).mean(), st-et)
 
-
+    
 
     def get_trajectory(self):
         return self.poses
