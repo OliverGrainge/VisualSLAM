@@ -8,7 +8,7 @@ def data_association(
     points2d_pos: List[np.ndarray],
     points2d_desc: List[np.ndarray],
     points3d_desc: np.ndarray,
-    max_matches_per_image: int=100
+    max_matches_per_image: int=200
 ) -> Tuple[np.ndarray]:
     point_indices = []
     camera_indices = []

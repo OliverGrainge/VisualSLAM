@@ -26,17 +26,18 @@ class Evaluate:
     def view_trajectories(self):
         gt = self.dataset.ground_truth()
         gt_pose = np.array([self.translation_vector(pose) for pose in gt])
+        pose_graph = self.odometry.get_trajectory()
         tracked_pose = np.array(
-            [self.translation_vector(pose) for pose in self.odometry.get_trajectory()]
+            [self.translation_vector(pose) for pose in pose_graph]
         )
 
         fig = plt.figure()
         ax = fig.add_subplot(111, projection="3d")
 
         ax.plot(
-            gt_pose[: self.num_samples, 0],
-            gt_pose[: self.num_samples, 1],
-            gt_pose[: self.num_samples, 2],
+            gt_pose[:self.num_samples, 0],
+            gt_pose[:self.num_samples, 1],
+            gt_pose[:self.num_samples, 2],
             marker="o",
             label="Ground Truth",
             markersize=2,
@@ -50,6 +51,7 @@ class Evaluate:
             label="Tracked",
             markersize=2,
         )
+        
 
         # Set labels and legend
         ax.set_xlabel("X")
