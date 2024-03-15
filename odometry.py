@@ -178,7 +178,7 @@ class StereoOdometry:
         left_projection: np.ndarray,
         right_projection: np.ndarray,
         initial_pose: np.ndarray,
-        window: int = 2,
+        window: int=3,
     ):
         self.left_projection = left_projection
         self.right_projection = right_projection
@@ -299,7 +299,115 @@ class StereoOdometry:
             params += list(rvec.flatten())
             params += list(tvec.flatten())
         return np.array(params)
+
+    @staticmethod 
+    def params2pose(params: np.ndarray):
+        assert len(params) % 6 == 0
+        poses = []
+        for idx in range(len(params) // 6): 
+            p = params[idx*6:idx*6 + 6]
+            rvec = np.array(p[:3])
+            tvec = np.array(p[3:])
+            pose = homogenize(rvec, tvec)
+            poses.append(pose)
+        return poses
+
+
+    def ba_cost(self, params: np.ndarray,
+                n_camera: int, 
+                point_indices: List[np.ndarray],
+                sorted_points2d: List[np.ndarray],
+                points3d: np.ndarray, 
+                camera_model: np.ndarray):
+        all_errors = []
+        for idx in range(n_camera): 
+            pose = params[idx * 6: idx * 6 + 6]
+            rvec = pose[:3]
+            tvec = pose[3:]
+            indices = point_indices[idx]
+            pt2d = sorted_points2d[idx]
+            pt3d = points3d[indices]
+            p_p2d, _ = cv2.projectPoints(pt3d, rvec, tvec, camera_model, np.zeros(4))
+            p_p2d = p_p2d.squeeze()
+            errors = list((pt2d - p_p2d).flatten())
+            all_errors += errors
+        return np.array(all_errors)
+
+    def bundle_adjustment(self): 
+        points = self.points[-self.window:]
+        poses = self.poses[-self.window:]
+        points3d = self.points3d[-self.window:]
+        points3d_desc = self.desc3d[-self.window:]
+        points2d_pos = [self.get_pos(pt.left_kp) for pt in points]
+        points2d_desc = [pt.left_desc2d for pt in points]
+        
+        # make a single point cloud from the last up to date image
+        points3d = points3d[0]
+        points3d_desc = points3d_desc[0]
+        #points3d = np.vstack(points3d)
+        #points3d_desc = np.vstack(points3d_desc)
+
+        point_indices = []
+        sorted_points2d = []
+        for idx in range(len(points)):
+            pt2d, indices = self.data_association(points[idx].matcher,
+                                                  points3d_desc, 
+                                                  points2d_pos[idx],
+                                                  points2d_desc[idx])
+            point_indices.append(indices)
+            sorted_points2d.append(pt2d)
+
+        params = self.pose2params(poses)
+        n_camera = len(points)
+        args = (n_camera, point_indices, sorted_points2d, points3d, self.K_l)
+        errors = self.ba_cost(params, *args)
+        result = least_squares(self.ba_cost, params, args=args, method='lm')
+        errors_opt = self.ba_cost(result.x, *args)
+        poses = self.params2pose(result.x)
+        self.poses[-self.window:] = poses
+
     
+    """
+    def bundle_adjustment(self): 
+        points = self.points[-self.window:]
+        poses = self.poses[-self.window:]
+        points3d = self.points3d[-self.window:]
+        points3d_desc = self.desc3d[-self.window:]
+        points2d_pos = [self.get_pos(pt.left_kp) for pt in points]
+        points2d_desc = [pt.left_desc2d for pt in points]
+        
+        # make a single point cloud from the last up to date image
+        #points3d = points3d[0]
+        #points3d_desc = points3d_desc[0]
+        points3d = np.vstack(points3d)
+        points3d_desc = np.vstack(points3d_desc)
+
+        point_indices = []
+        sorted_points2d = []
+        for idx in range(len(points)):
+            pt2d, indices = self.data_association(points[idx].matcher,
+                                                  points3d_desc, 
+                                                  points2d_pos[idx],
+                                                  points2d_desc[idx])
+            point_indices.append(indices)
+            sorted_points2d.append(pt2d)
+
+        params = self.pose2params(poses)
+        n_camera = len(points)
+
+        
+        for idx in range(n_camera):
+            pose = params[idx * 6: idx * 6 + 6]
+            rvec = pose[:3]
+            tvec = pose[3:]
+            indices = point_indices[idx]
+            pt2d = sorted_points2d[idx]
+            pt3d = points3d[indices]
+            p_p2d = self.reproject(pt3d, rvec, tvec, self.K_l)
+            errors = (pt2d - p_p2d).flatten()
+            print("hello", np.abs(errors).mean())
+    """
+
     """
     def bundle_adjustment(self): 
         points = self.points[-self.window:]
