@@ -27,17 +27,15 @@ class Evaluate:
         gt = self.dataset.ground_truth()
         gt_pose = np.array([self.translation_vector(pose) for pose in gt])
         pose_graph = self.odometry.get_trajectory()
-        tracked_pose = np.array(
-            [self.translation_vector(pose) for pose in pose_graph]
-        )
+        tracked_pose = np.array([self.translation_vector(pose) for pose in pose_graph])
 
         fig = plt.figure()
         ax = fig.add_subplot(111, projection="3d")
 
         ax.plot(
-            gt_pose[:self.num_samples, 0],
-            gt_pose[:self.num_samples, 1],
-            gt_pose[:self.num_samples, 2],
+            gt_pose[: self.num_samples, 0],
+            gt_pose[: self.num_samples, 1],
+            gt_pose[: self.num_samples, 2],
             marker="o",
             label="Ground Truth",
             markersize=2,
@@ -51,9 +49,20 @@ class Evaluate:
             label="Tracked",
             markersize=2,
         )
-        
+
+        all_pts = self.odometry.get_map()
+        for points3d in all_pts: 
+            idx = np.random.choice(points3d.shape[0], size=100, replace=True)
+            points3d = points3d[idx]
+            ax.scatter(points3d[:, 0], points3d[:, 1], points3d[:, 2], alpha=0.2, s=10)
+
+
 
         # Set labels and legend
+        size = 100
+        ax.set_xlim(-3, 3)  # Set x-axis limits
+        ax.set_ylim(-4, 0)  # Set y-axis limits
+        ax.set_zlim(0, 150)  # Set z-axis limits
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
         ax.set_zlabel("Z")

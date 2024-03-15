@@ -11,7 +11,7 @@ import utils
 
 
 class KittiDataset:
-    def __init__(self, config: dict, sequence: str = "01"):
+    def __init__(self, config: dict, sequence: str = "06"):
         super().__init__()
         self.data_dir = config["datasets_directory"]
         self.sequence_dir = join(

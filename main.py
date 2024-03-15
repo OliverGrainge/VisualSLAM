@@ -4,8 +4,5 @@ from test import Evaluate
 
 
 if __name__ == "__main__":
-    eval = Evaluate(StereoOdometry, KittiDataset, num_samples=10)
+    eval = Evaluate(StereoOdometry, KittiDataset, num_samples=100)
     eval.view_trajectories()
-
-
-
