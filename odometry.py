@@ -178,7 +178,7 @@ class StereoOdometry:
         left_projection: np.ndarray,
         right_projection: np.ndarray,
         initial_pose: np.ndarray,
-        window: int=3,
+        window: int=10,
     ):
         self.left_projection = left_projection
         self.right_projection = right_projection
@@ -252,7 +252,7 @@ class StereoOdometry:
             self.desc3d.append(new_point.desc3d)
             self.poses.append(new_pose)
             self.points.append(new_point)
-            self.bundle_adjustment()
+            #self.bundle_adjustment()
             # ======================================
 
     def get_trajectory(self):
@@ -342,10 +342,10 @@ class StereoOdometry:
         points2d_desc = [pt.left_desc2d for pt in points]
         
         # make a single point cloud from the last up to date image
-        points3d = points3d[0]
-        points3d_desc = points3d_desc[0]
-        #points3d = np.vstack(points3d)
-        #points3d_desc = np.vstack(points3d_desc)
+        #points3d = points3d[0]
+        #points3d_desc = points3d_desc[0]
+        points3d = np.vstack(points3d)
+        points3d_desc = np.vstack(points3d_desc)
 
         point_indices = []
         sorted_points2d = []
