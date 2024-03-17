@@ -61,7 +61,7 @@ class Evaluate:
         # Set labels and legend
         size = 100
         ax.set_xlim(-3, 3)  # Set x-axis limits
-        ax.set_ylim(-4, 0)  # Set y-axis limits
+        ax.set_ylim(-20, 0)  # Set y-axis limits
         ax.set_zlim(0, 150)  # Set z-axis limits
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
