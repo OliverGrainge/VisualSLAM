@@ -5,113 +5,13 @@ from typing import Tuple
 from collections import deque
 from point_features import SIFT
 from typing import List
-import bundle_adjustment
 from scipy.optimize import least_squares
 import time
 from sklearn.metrics.pairwise import cosine_similarity
-
+from utils import get_matches, sort_matches, homogenize, unhomogenize, transform_points3d, decompose_projection, projection_matrix, relative_transformation
+from pose_graph_optimization import optimize_poses
 np.set_printoptions(precision=3, suppress=True)
 
-
-def get_matches(
-    matcher, desc1: np.ndarray, desc2: np.ndarray, ratio_threshold=0.75, top_N=None
-):
-    matches = matcher.knnMatch(desc1, desc2, k=2)
-    good_matches = []
-    for m, n in matches:
-        if m.distance < ratio_threshold * n.distance:
-            good_matches.append(m)
-    matches = good_matches
-    if top_N is not None:
-        matches = sorted(matches, key=lambda x: x.distance)
-        matches = matches[:top_N]
-    return matches
-
-
-def sort_matches(matches: List, left_kp: List, right_kp: List, left_desc: np.ndarray):
-    points_left = np.zeros((len(matches), 2))
-    points_right = np.zeros((len(matches), 2))
-    points_desc = np.zeros((len(matches), left_desc.shape[1]), dtype=np.float32)
-    for i, match in enumerate(matches):
-        points_left[i, :] = left_kp[match.queryIdx].pt
-        points_right[i, :] = right_kp[match.trainIdx].pt
-        points_desc[i, :] = left_desc[match.queryIdx]
-    return points_left, points_right, points_desc
-
-
-def homogenize(rotation: np.ndarray, translation: np.ndarray) -> np.ndarray:
-    transformation = np.eye(4)
-    R, _ = cv2.Rodrigues(rotation)
-    transformation[:3, :3] = R.squeeze()
-    transformation[:3, 3] = translation.squeeze()
-    return transformation
-
-
-def unhomogenize(pose: np.ndarray) -> Tuple[np.ndarray]:
-    assert pose.shape[0] == 4
-    assert pose.shape[1] == 4
-    rot = pose[:3, :3]
-    rvec, _ = cv2.Rodrigues(rot)
-    tvec = pose[:3, 3]
-    return rvec, tvec
-
-
-def transform_points3d(trans: np.ndarray, points: np.ndarray):
-    points = np.hstack((points, np.ones((len(points), 1))))
-    assert points.shape[1] == 4
-    tpoints = np.dot(trans, points.T).T
-    tpoints = tpoints[:, :3] / tpoints[:, 3].reshape(-1, 1)
-    return tpoints
-
-
-def decompose_projection(proj: np.ndarray) -> np.ndarray:
-    K, R, T = cv2.decomposeProjectionMatrix(proj)[:3]
-    T = T.flatten()
-    T = T[:3] / T[3]
-    T = -T
-    return (K, R, T.reshape(-1, 1))
-
-
-def projection_matrix(rvec: np.ndarray, tvec: np.ndarray, k: np.ndarray):
-    assert len(rvec.squeeze()) == 3
-    assert len(tvec.squeeze()) == 3
-    proj = np.eye(4)[:3, :]
-    rmat, _ = cv2.Rodrigues(rvec)
-    assert rmat.shape[0] == 3
-    assert rmat.shape[1] == 3
-    proj[:3, :3] = rmat
-    proj[:3, 3] = tvec.squeeze()
-    proj = np.dot(k, proj)
-    return proj
-
-
-def relative_transformation(
-    matcher,
-    points3d: np.ndarray,
-    desc3d: np.ndarray,
-    left_kp: List,
-    desc2d: np.ndarray,
-    K_l: np.ndarray,
-):
-    matches = get_matches(matcher, desc3d, desc2d)
-    points3d_sorted = np.zeros((len(matches), 3), dtype=np.float32)
-    points2d_sorted = np.zeros((len(matches), 2), dtype=np.float32)
-    points_desc = np.zeros((len(matches), desc3d.shape[1]), dtype=np.float32)
-    for i, match in enumerate(matches):
-        points3d_sorted[i, :] = points3d[match.queryIdx]
-        points2d_sorted[i, :] = left_kp[match.trainIdx].pt
-        points_desc[i, :] = desc3d[match.queryIdx]
-
-    success, rotation_vector, translation_vector, inliers = cv2.solvePnPRansac(
-        points3d_sorted,
-        points2d_sorted,
-        K_l,
-        np.zeros(4),
-        flags=cv2.SOLVEPNP_ITERATIVE,
-    )
-    if not success:
-        raise Exception("PnP algorithm failed")
-    return rotation_vector, translation_vector
 
 
 class StereoPoint:
@@ -170,6 +70,20 @@ class StereoPoint:
         point_4d_hom = point_4d_hom.T
         self.points3d = point_4d_hom[:, :3] / point_4d_hom[:, 3].reshape(-1, 1)
         self.desc3d = points_desc
+        """
+        matched_image = cv2.drawMatches(
+            np.array(self.image_left),
+            self.left_kp,
+            np.array(self.image_right),
+            self.right_kp,
+            matches[:40],
+            None,
+            flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+        cv2.imshow("Matched Points", matched_image)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+        """
+        
 
 
 class StereoOdometry:
@@ -252,7 +166,7 @@ class StereoOdometry:
             self.desc3d.append(new_point.desc3d)
             self.poses.append(new_pose)
             self.points.append(new_point)
-            #self.bundle_adjustment()
+            self.pose_graph_optimization()
             # ======================================
 
     def get_trajectory(self):
@@ -261,195 +175,33 @@ class StereoOdometry:
     def get_map(self): 
         return [pt.points3d for pt in self.points]
 
-    @staticmethod 
-    def get_pos(keypoints: List) -> np.ndarray:
-        pos = []
-        for kp in keypoints: 
-            pos.append(np.array([kp.pt[0], kp.pt[1]]))
-        return np.vstack(pos)
-    
-    @staticmethod
-    def data_association(matcher, desc3d: np.ndarray, points2d: np.ndarray, desc2d: np.ndarray) -> Tuple[np.ndarray]: 
-        """
-        This function takes a set of 3d descriptors aswell as 2d points and descriptors. 
-        It returns a set of points that match the 3d points and a set of indices as to which 
-        points they are 
-        
-        """
-        matches = get_matches(matcher, desc2d, desc3d)
-        sorted_points2d = np.zeros((len(matches), 2))
-        point_indices = np.zeros(len(matches)).astype(int)
-        for idx, match in enumerate(matches):
-            sorted_points2d[idx, :] = points2d[match.queryIdx]
-            point_indices[idx] = match.trainIdx
-        
-        return sorted_points2d, point_indices
-
-
-    @staticmethod
-    def reproject(points3d: np.ndarray, rvec: np.ndarray, tvec: np.ndarray, K: np.ndarray):
-        p_points, _ = cv2.projectPoints(points3d, rvec, tvec, K, np.zeros(4))
-        return p_points.squeeze()
-
-    @staticmethod
-    def pose2params(poses: np.ndarray): 
-        params = []
-        for pose in poses: 
-            rvec, tvec = unhomogenize(pose)
-            params += list(rvec.flatten())
-            params += list(tvec.flatten())
-        return np.array(params)
-
-    @staticmethod 
-    def params2pose(params: np.ndarray):
-        assert len(params) % 6 == 0
-        poses = []
-        for idx in range(len(params) // 6): 
-            p = params[idx*6:idx*6 + 6]
-            rvec = np.array(p[:3])
-            tvec = np.array(p[3:])
-            pose = homogenize(rvec, tvec)
-            poses.append(pose)
-        return poses
-
-
-    def ba_cost(self, params: np.ndarray,
-                n_camera: int, 
-                point_indices: List[np.ndarray],
-                sorted_points2d: List[np.ndarray],
-                points3d: np.ndarray, 
-                camera_model: np.ndarray):
-        all_errors = []
-        for idx in range(n_camera): 
-            pose = params[idx * 6: idx * 6 + 6]
-            rvec = pose[:3]
-            tvec = pose[3:]
-            indices = point_indices[idx]
-            pt2d = sorted_points2d[idx]
-            pt3d = points3d[indices]
-            p_p2d, _ = cv2.projectPoints(pt3d, rvec, tvec, camera_model, np.zeros(4))
-            p_p2d = p_p2d.squeeze()
-            errors = list((pt2d - p_p2d).flatten())
-            all_errors += errors
-        return np.array(all_errors)
-
-    def bundle_adjustment(self): 
+    def pose_graph_optimization(self):
         points = self.points[-self.window:]
         poses = self.poses[-self.window:]
-        points3d = self.points3d[-self.window:]
-        points3d_desc = self.desc3d[-self.window:]
-        points2d_pos = [self.get_pos(pt.left_kp) for pt in points]
-        points2d_desc = [pt.left_desc2d for pt in points]
+        pose_graph = [[None for _ in range(len(points))] for _ in range(len(points))]
+        i = 0
+        for j in range(len(points)): 
+            if i != j:
+                rvec, tvec = relative_transformation(points[i].matcher,
+                                            points[i].points3d,
+                                            points[i].desc3d,
+                                            points[j].left_kp,
+                                            points[j].left_desc2d,
+                                            self.K_l)
+                # pose_j ~ pose_i @ pose_graph[i][j]
+                pose_graph[i][j] = np.linalg.inv(homogenize(rvec, tvec))
+        opt_poses = optimize_poses(poses, pose_graph)
+        self.poses[-self.window:] = opt_poses
+
+
         
-        # make a single point cloud from the last up to date image
-        #points3d = points3d[0]
-        #points3d_desc = points3d_desc[0]
-        points3d = np.vstack(points3d)
-        points3d_desc = np.vstack(points3d_desc)
 
-        point_indices = []
-        sorted_points2d = []
-        for idx in range(len(points)):
-            pt2d, indices = self.data_association(points[idx].matcher,
-                                                  points3d_desc, 
-                                                  points2d_pos[idx],
-                                                  points2d_desc[idx])
-            point_indices.append(indices)
-            sorted_points2d.append(pt2d)
+        
 
-        params = self.pose2params(poses)
-        n_camera = len(points)
-        args = (n_camera, point_indices, sorted_points2d, points3d, self.K_l)
-        errors = self.ba_cost(params, *args)
-        result = least_squares(self.ba_cost, params, args=args, method='lm')
-        errors_opt = self.ba_cost(result.x, *args)
-        poses = self.params2pose(result.x)
-        self.poses[-self.window:] = poses
+
+
 
     
-    """
-    def bundle_adjustment(self): 
-        points = self.points[-self.window:]
-        poses = self.poses[-self.window:]
-        points3d = self.points3d[-self.window:]
-        points3d_desc = self.desc3d[-self.window:]
-        points2d_pos = [self.get_pos(pt.left_kp) for pt in points]
-        points2d_desc = [pt.left_desc2d for pt in points]
-        
-        # make a single point cloud from the last up to date image
-        #points3d = points3d[0]
-        #points3d_desc = points3d_desc[0]
-        points3d = np.vstack(points3d)
-        points3d_desc = np.vstack(points3d_desc)
-
-        point_indices = []
-        sorted_points2d = []
-        for idx in range(len(points)):
-            pt2d, indices = self.data_association(points[idx].matcher,
-                                                  points3d_desc, 
-                                                  points2d_pos[idx],
-                                                  points2d_desc[idx])
-            point_indices.append(indices)
-            sorted_points2d.append(pt2d)
-
-        params = self.pose2params(poses)
-        n_camera = len(points)
-
-        
-        for idx in range(n_camera):
-            pose = params[idx * 6: idx * 6 + 6]
-            rvec = pose[:3]
-            tvec = pose[3:]
-            indices = point_indices[idx]
-            pt2d = sorted_points2d[idx]
-            pt3d = points3d[indices]
-            p_p2d = self.reproject(pt3d, rvec, tvec, self.K_l)
-            errors = (pt2d - p_p2d).flatten()
-            print("hello", np.abs(errors).mean())
-    """
-
-    """
-    def bundle_adjustment(self): 
-        points = self.points[-self.window:]
-        poses = self.poses[-self.window:]
-        points3d = self.points3d[-self.window:]
-        points3d_desc = self.desc3d[-self.window:]
-        points2d_pos = [self.get_pos(pt.left_kp) for pt in points]
-        points2d_desc = [pt.left_desc2d for pt in points]
-
-        camera_indices = []
-        sorted_points2d = []
-        for idx in range(len(points)):
-            pt2d, indices = self.data_association(points[idx].matcher,
-                                                  points3d_desc[idx], 
-                                                  points2d_pos[idx],
-                                                  points2d_desc[idx])
-            camera_indices.append(indices)
-            sorted_points2d.append(pt2d)
-
-        params = self.pose2params(poses)
-        n_camera = len(points)
-
-        for idx in range(n_camera):
-            pose = params[idx * 6: idx * 6 + 6]
-            rvec = pose[:3]
-            tvec = pose[3:]
-            indices = camera_indices[idx]
-            pt2d = sorted_points2d[idx]
-            pt3d = points3d[idx][indices]
-            p_p2d = self.reproject(pt3d, rvec, tvec, self.K_l)
-            errors = (pt2d - p_p2d).flatten()
-            print(np.abs(errors).mean())
-    """
-
-        
-
-        
-        
-
-
-        
-
 
 
     
