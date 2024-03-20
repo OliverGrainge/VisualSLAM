@@ -2,5 +2,5 @@
 datasets_directory: /Users/olivergrainge/Documents/github/Datasets
 feature_detector: "sift" # either orb or sift
 pose_graph_optimization: True
-loop_closure: True
+loop_closure: False
 window_size: 3

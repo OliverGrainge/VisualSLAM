@@ -63,6 +63,9 @@ class Evaluate:
         )
 
         # Set labels and legend
+        ax.set_xlim(min(gt_pose[:self.num_samples, 0]), max(gt_pose[:self.num_samples, 0]))
+        ax.set_ylim(min(gt_pose[:self.num_samples, 1]), max(gt_pose[:self.num_samples, 1]))
+        ax.set_zlim(min(gt_pose[:self.num_samples, 2]), max(gt_pose[:self.num_samples, 2]))
         ax.set_title(f"MAE: {total_error:.2f}")
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
