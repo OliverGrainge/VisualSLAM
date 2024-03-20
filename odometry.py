@@ -7,13 +7,23 @@ import numpy as np
 from PIL import Image
 from scipy.optimize import least_squares
 from sklearn.metrics.pairwise import cosine_similarity
+from loop_detector import LoopDetector
 
 from point_features import SIFT
 from pose_graph_optimization import optimize_poses
-from utils import (decompose_projection, get_config, get_feature_detector,
-                   get_feature_matcher, get_matches, homogenize,
-                   projection_matrix, relative_transformation, sort_matches,
-                   transform_points3d, unhomogenize)
+from utils import (
+    decompose_projection,
+    get_config,
+    get_feature_detector,
+    get_feature_matcher,
+    get_matches,
+    homogenize,
+    projection_matrix,
+    relative_transformation,
+    sort_matches,
+    transform_points3d,
+    unhomogenize,
+)
 
 np.set_printoptions(precision=3, suppress=True)
 
@@ -99,6 +109,7 @@ class StereoOdometry:
         initial_pose: np.ndarray,
         pgo: bool = config["pose_graph_optimization"],
         window: int = config["window_size"],
+        loop_closure: bool = config["loop_closure"],
     ):
         self.left_projection = left_projection
         self.right_projection = right_projection
@@ -107,9 +118,13 @@ class StereoOdometry:
         self.initial_pose = initial_pose
         self.window = window
         self.pgo = pgo
+        self.loop_closure = loop_closure
         self.K_l, self.R_l, self.T_l = decompose_projection(self.left_projection)
         self.K_r, self.R_r, self.T_r = decompose_projection(self.right_projection)
         self.left_to_right = self.T_r - self.T_l
+
+        if self.loop_closure:
+            self.loop_detector = LoopDetector()
 
         self.poses = [initial_pose]
         self.cumulative_transform_inv = None
@@ -176,6 +191,15 @@ class StereoOdometry:
             self.points.append(new_point)
             if self.pgo:
                 self.pose_graph_optimization()
+            if self.loop_closure:
+                sucess, match_idx, match_dist = self.loop_detector(image_left)
+                if sucess:
+                    import matplotlib.pyplot as plt 
+                    fig, axs = plt.subplots(1, 2)
+                    axs[0].imshow(np.array(image_left), cmap='gray')
+                    axs[1].imshow(np.array(self.points[match_idx].image_left), cmap='gray')
+                    plt.show()
+
             # ======================================
 
     def get_trajectory(self):
