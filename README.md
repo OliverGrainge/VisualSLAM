@@ -1,6 +1,9 @@
 # VisualSLAM
 This is a full visual slam pipeline built in python. The repo is built to provide a simple but comprehesive VSLAM system to support quick experimentation and research, particularly in the field of visual place recognition. The code base is extensible where each aspect of the VSLAM pipeline can be altered in a systematic way such that it's effect on performance can be evaluated. 
 
+![Example Image](images/tracking1.png)
+
+
 The codebase uses a stereo odometry pipeline with 3d-2d transformation estimation through the PnP algorithm with RANSAC for improved structural data association. Additionaly pose graph optimization over the last N poses is implemented in addition to global optimization with a loop closing detector. The algorithmic steps can be outlined below. 
 
 1. Extract point features in Left and Right Stereo Images $I^{l}_{k}$,  $I^{r}_k$.
