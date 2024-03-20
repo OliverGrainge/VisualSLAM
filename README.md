@@ -8,3 +8,5 @@ The codebase uses a stereo odometry pipeline with 3d-2d transformation estimatio
 3. Triangulate points between stereo images to get 3D points.
 4. Extract Point features from the next stereo pair in the sequence $I^{l}_{k+1}$, $I^{r}_{k+1}$.
 5. Estimate relative transformation between $I^{l}_k$, $I^{l}_{k+1}$ with the PnP and RANSAC algorithm.
+6. Run Pose Graph Optimization over the last N poses.
+7. Run Place Recognition for loop closure detections. If detected. Perform global optimization with the additional constraints. 
