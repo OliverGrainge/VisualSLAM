@@ -1,17 +1,23 @@
+import time
+from collections import deque
+from typing import List, Tuple
+
 import cv2
 import numpy as np
 from PIL import Image
-from typing import Tuple
-from collections import deque
-from point_features import SIFT
-from typing import List
 from scipy.optimize import least_squares
-import time
 from sklearn.metrics.pairwise import cosine_similarity
-from utils import get_matches, sort_matches, homogenize, unhomogenize, transform_points3d, decompose_projection, projection_matrix, relative_transformation
+
+from point_features import SIFT
 from pose_graph_optimization import optimize_poses
+from utils import (decompose_projection, get_config, get_feature_detector,
+                   get_feature_matcher, get_matches, homogenize,
+                   projection_matrix, relative_transformation, sort_matches,
+                   transform_points3d, unhomogenize)
+
 np.set_printoptions(precision=3, suppress=True)
 
+config = get_config()
 
 
 class StereoPoint:
@@ -38,8 +44,8 @@ class StereoPoint:
         self.points3d = None
         self.desc3d = None
 
-        self.matcher = cv2.BFMatcher()
-        self.feature_detector = SIFT()
+        self.matcher = get_feature_matcher()
+        self.feature_detector = get_feature_detector()
         self.stereo = cv2.StereoSGBM_create(numDisparities=16, blockSize=15)
 
     def featurepoints2d(self) -> None:
@@ -69,7 +75,7 @@ class StereoPoint:
         )
         point_4d_hom = point_4d_hom.T
         self.points3d = point_4d_hom[:, :3] / point_4d_hom[:, 3].reshape(-1, 1)
-        self.desc3d = points_desc
+        self.desc3d = points_desc.astype(self.left_desc2d.dtype)
         """
         matched_image = cv2.drawMatches(
             np.array(self.image_left),
@@ -83,7 +89,6 @@ class StereoPoint:
         cv2.waitKey(0)
         cv2.destroyAllWindows()
         """
-        
 
 
 class StereoOdometry:
@@ -92,7 +97,8 @@ class StereoOdometry:
         left_projection: np.ndarray,
         right_projection: np.ndarray,
         initial_pose: np.ndarray,
-        window: int=10,
+        pgo: bool = config["pose_graph_optimization"],
+        window: int = config["window_size"],
     ):
         self.left_projection = left_projection
         self.right_projection = right_projection
@@ -100,6 +106,7 @@ class StereoOdometry:
         self.initial_projection_right = right_projection
         self.initial_pose = initial_pose
         self.window = window
+        self.pgo = pgo
         self.K_l, self.R_l, self.T_l = decompose_projection(self.left_projection)
         self.K_r, self.R_r, self.T_r = decompose_projection(self.right_projection)
         self.left_to_right = self.T_r - self.T_l
@@ -160,48 +167,39 @@ class StereoOdometry:
                 )
                 self.all_cumulative_transforms.append(self.cumulative_transform)
 
-
             new_pose = self.poses[-1] @ np.linalg.inv(homogenize(rvec, tvec))
-            self.points3d.append(transform_points3d(np.linalg.inv(new_pose), new_point.points3d))
+            self.points3d.append(
+                transform_points3d(np.linalg.inv(new_pose), new_point.points3d)
+            )
             self.desc3d.append(new_point.desc3d)
             self.poses.append(new_pose)
             self.points.append(new_point)
-            self.pose_graph_optimization()
+            if self.pgo:
+                self.pose_graph_optimization()
             # ======================================
 
     def get_trajectory(self):
         return self.poses
 
-    def get_map(self): 
+    def get_map(self):
         return [pt.points3d for pt in self.points]
 
     def pose_graph_optimization(self):
-        points = self.points[-self.window:]
-        poses = self.poses[-self.window:]
+        points = self.points[-self.window :]
+        poses = self.poses[-self.window :]
         pose_graph = [[None for _ in range(len(points))] for _ in range(len(points))]
         i = 0
-        for j in range(len(points)): 
+        for j in range(len(points)):
             if i != j:
-                rvec, tvec = relative_transformation(points[i].matcher,
-                                            points[i].points3d,
-                                            points[i].desc3d,
-                                            points[j].left_kp,
-                                            points[j].left_desc2d,
-                                            self.K_l)
+                rvec, tvec = relative_transformation(
+                    points[i].matcher,
+                    points[i].points3d,
+                    points[i].desc3d,
+                    points[j].left_kp,
+                    points[j].left_desc2d,
+                    self.K_l,
+                )
                 # pose_j ~ pose_i @ pose_graph[i][j]
                 pose_graph[i][j] = np.linalg.inv(homogenize(rvec, tvec))
         opt_poses = optimize_poses(poses, pose_graph)
-        self.poses[-self.window:] = opt_poses
-
-
-        
-
-        
-
-
-
-
-    
-
-
-    
+        self.poses[-self.window :] = opt_poses

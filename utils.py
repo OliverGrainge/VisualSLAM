@@ -1,22 +1,44 @@
+import time
+from collections import deque
+from typing import List, Tuple
+
 import cv2
 import numpy as np
-from PIL import Image
-from typing import Tuple
-from collections import deque
-from point_features import SIFT
-from typing import List
-from scipy.optimize import least_squares
-import time
 import yaml
+from PIL import Image
+from scipy.optimize import least_squares
 from sklearn.metrics.pairwise import cosine_similarity
+
+import point_features
+from point_features import SIFT
 
 np.set_printoptions(precision=3, suppress=True)
 
 
-def get_config(): 
-    with open("config.yaml", 'r') as file:
+def get_config():
+    with open("config.yaml", "r") as file:
         data = yaml.safe_load(file)
     return data
+
+
+def get_feature_detector():
+    config = get_config()
+    if "orb" in config["feature_detector"].lower():
+        return point_features.ORB()
+    elif "sift" in config["feature_detector"].lower():
+        return point_features.SIFT()
+    else:
+        raise NotImplementedError
+
+
+def get_feature_matcher():
+    config = get_config()
+    if "orb" in config["feature_detector"].lower():
+        return cv2.BFMatcher(cv2.NORM_HAMMING)
+    elif "sift" in config["feature_detector"].lower():
+        return cv2.BFMatcher(cv2.NORM_L2)
+    else:
+        raise NotImplementedError
 
 
 def get_matches(

@@ -1,6 +1,7 @@
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from tqdm import tqdm
+
 import utils
 
 
@@ -49,23 +50,20 @@ class Evaluate:
             label="Tracked",
             markersize=2,
         )
-
+        """
         all_pts = self.odometry.get_map()
         for points3d in all_pts: 
             idx = np.random.choice(points3d.shape[0], size=100, replace=True)
             points3d = points3d[idx]
             ax.scatter(points3d[:, 0], points3d[:, 1], points3d[:, 2], alpha=0.2, s=10)
+        """
 
-        
-
-        total_error = np.mean(np.abs(gt_pose[:self.num_samples] - tracked_pose[:self.num_samples]))
+        total_error = np.mean(
+            np.abs(gt_pose[: self.num_samples] - tracked_pose[: self.num_samples])
+        )
 
         # Set labels and legend
-        size = 100
-        ax.set_xlim(-3, 3)  # Set x-axis limits
-        ax.set_ylim(-20, 0)  # Set y-axis limits
-        ax.set_zlim(0, 150)  # Set z-axis limits
-        ax.set_title(f"ABS Error: {total_error:.2f}")
+        ax.set_title(f"MAE: {total_error:.2f}")
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
         ax.set_zlabel("Z")
