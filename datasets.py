@@ -11,7 +11,28 @@ import utils
 
 
 class KittiDataset:
+    """
+    A class for handling and loading data from the KITTI odometry dataset, including stereo images, calibration parameters, and ground truth poses.
+
+    Attributes:
+        data_dir (str): Directory path to the dataset.
+        sequence_dir (str): Path to the sequence directory within the KITTI dataset.
+        image_paths_left (list of str): Sorted list of paths to left camera images.
+        image_paths_right (list of str): Sorted list of paths to right camera images.
+        K_l (np.ndarray): Intrinsic camera matrix for the left camera.
+        P_l (np.ndarray): Projection matrix for the left camera.
+        K_r (np.ndarray): Intrinsic camera matrix for the right camera.
+        P_r (np.ndarray): Projection matrix for the right camera.
+        poses (np.ndarray): Ground truth poses for the sequence.
+
+    Parameters:
+        config (dict): Configuration dictionary containing dataset settings, including the datasets directory.
+        sequence (str, optional): The sequence number to load. Defaults to "09".
+    """
     def __init__(self, config: dict, sequence: str = "09"):
+        """
+        Initializes the KittiDataset object by loading image paths, calibration data, and ground truth poses for the specified sequence.
+        """
         super().__init__()
         self.data_dir = config["datasets_directory"]
         self.sequence_dir = join(
@@ -33,17 +54,15 @@ class KittiDataset:
     @staticmethod
     def _load_calib(filepath) -> Tuple[np.ndarray]:
         """
-        Loads the calibration of the camera
-        Parameters
-        ----------
-        filepath (str): The file path to the camera file
+        Loads the calibration data from a specified file.
 
-        Returns
-        -------
-        K_l (ndarray): Intrinsic parameters for left camera. Shape (3,3)
-        P_l (ndarray): Projection matrix for left camera. Shape (3,4)
-        K_r (ndarray): Intrinsic parameters for right camera. Shape (3,3)
-        P_r (ndarray): Projection matrix for right camera. Shape (3,4)
+        Parameters:
+            filepath (str): Path to the calibration file.
+
+        Returns:
+            Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: Returns the intrinsic camera matrix for the left camera (K_l),
+            the projection matrix for the left camera (P_l), the intrinsic camera matrix for the right camera (K_r),
+            and the projection matrix for the right camera (P_r).
         """
         data = []
         with open(filepath, "r") as f:
@@ -61,15 +80,13 @@ class KittiDataset:
     @staticmethod
     def _load_poses(filepath) -> np.ndarray:
         """
-        Loads the GT poses
+        Loads the ground truth poses from a specified file.
 
-        Parameters
-        ----------
-        filepath (str): The file path to the poses file
+        Parameters:
+            filepath (str): Path to the file containing the ground truth poses.
 
-        Returns
-        -------
-        poses (ndarray): The GT poses. Shape (n, 4, 4)
+        Returns:
+            np.ndarray: An array of ground truth poses.
         """
         poses = []
         with open(filepath, "r") as f:
@@ -81,25 +98,65 @@ class KittiDataset:
         return np.array(poses)
 
     def __len__(self):
+        """
+        Returns the number of stereo image pairs in the dataset sequence.
+
+        Returns:
+            int: The number of stereo image pairs.
+        """
+
         return len(self.image_paths_left)
 
     def load_images(self, idx: int) -> Tuple[Image.Image]:
+        """
+        Loads a pair of stereo images at the specified index.
+
+        Parameters:
+            idx (int): The index of the image pair to load.
+
+        Returns:
+            Tuple[Image.Image, Image.Image]: A tuple containing the left and right images as PIL.Image objects.
+        """
         img_left = Image.open(self.image_paths_left[idx])
         img_right = Image.open(self.image_paths_right[idx])
         return (img_left, img_right)
 
-    def initial_pose(self):
+    def initial_pose(self) -> np.ndarray:
+        """
+        Returns the initial pose from the ground truth poses.
+
+        Returns:
+            np.ndarray: The initial pose as a 4x4 transformation matrix.
+        """
         return self.poses[0]
 
     def projection_matrix(self) -> Tuple[np.ndarray]:
+        """
+        Returns the projection matrices for the left and right cameras.
+
+        Returns:
+            Tuple[np.ndarray, np.ndarray]: The projection matrices (P_l, P_r).
+        """
         return (self.P_l, self.P_r)
 
     def intrinsic_calib(self) -> Tuple[np.ndarray]:
+        """
+        Decomposes the projection matrices to retrieve the intrinsic calibration matrices for the left and right cameras.
+
+        Returns:
+            Tuple[np.ndarray, np.ndarray]: The intrinsic calibration matrices for the left and right cameras (K_l, K_r).
+        """
         k1, r1, t1, _, _, _, _ = cv2.decomposeProjectionMatrix(self.P_l)
         k2, r2, t2, _, _, _, _ = cv2.decomposeProjectionMatrix(self.P_r)
         return k1, k2
 
-    def ground_truth(self):
+    def ground_truth(self) -> List[np.ndarray]:
+        """
+        Returns the ground truth poses for the sequence.
+
+        Returns:
+            List[np.ndarray]: The ground truth poses.
+        """
         return self.poses
 
 

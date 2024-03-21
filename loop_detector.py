@@ -3,14 +3,31 @@ import numpy as np
 import torch
 from PIL import Image
 from torchvision import transforms
-from typing import Union
+from typing import Union, Tuple
 
 
 class LoopDetector:
+    """
+    A loop detector class that utilizes a deep learning model to compute features of images and performs loop detection
+    by matching these features using the FAISS library. Loop detection identifies if a current image has been seen before.
+
+    Attributes:
+        threshold (float): The distance threshold for considering two images as a match. Lower values mean more strict matching.
+        model (torch.nn.Module): The deep learning model used to compute image features.
+        device (str): The device on which the model will be run ('cuda' or 'cpu').
+        preprocess (torchvision.transforms.Compose): The preprocessing pipeline applied to images before feature extraction.
+        index (faiss.IndexFlatL2): The FAISS index for efficient similarity search of image features.
+
+    Parameters:
+        threshold (float, optional): The threshold for matching features. Defaults to 0.40.
+    """
     def __init__(self, threshold=0.40):
+        """
+        Initializes the loop detector with a specified threshold for feature matching, loads the model, and prepares the FAISS index.
+        """
         self.threshold = threshold
 
-        self.model = model = torch.hub.load(
+        self.model = torch.hub.load(
             "gmberton/eigenplaces",
             "get_trained_model",
             backbone="ResNet50",
@@ -33,7 +50,17 @@ class LoopDetector:
 
         self.index = faiss.IndexFlatL2(2048)
 
-    def __call__(self, image: Image.Image) -> Union[int, None]:
+    def __call__(self, image: Image.Image) -> Tuple[bool, int, float]:
+        """
+        Processes an image through the loop detector to determine if it matches a previously seen image.
+
+        Parameters:
+            image (Image.Image): The image to process and match.
+
+        Returns:
+            Tuple[bool, Optional[int], Optional[float]]: A tuple containing a boolean indicating a successful match,
+            the index of the matched image if a match is found, and the distance to the matched image. Returns (False, None, None) if no match is found.
+        """
         feature = self.compute_feature(image)
         if self.index.ntotal < 1:
             self.index.add(feature)
@@ -43,6 +70,15 @@ class LoopDetector:
         return match_sucess, match_idx, match_dist
 
     def compute_feature(self, image: Image.Image) -> np.ndarray:
+        """
+        Computes the feature vector of an image using the deep learning model.
+
+        Parameters:
+            image (Image.Image): The image to compute features for.
+
+        Returns:
+            np.ndarray: The computed feature vector.
+        """
         image_npy = np.array(image)
         if image_npy.ndim == 2:
             image = np.stack([image_npy, image_npy, image_npy])
@@ -55,6 +91,16 @@ class LoopDetector:
         return feature
 
     def place_match(self, feature: np.ndarray) -> Union[int, None]:
+        """
+        Attempts to match a feature vector with previously seen images.
+
+        Parameters:
+            feature (np.ndarray): The feature vector to match.
+
+        Returns:
+            Tuple[bool, Optional[int], Optional[float]]: A tuple indicating whether a match was found,
+            the index of the matched image, and the distance of the match. If no match is found, returns (False, None, None).
+        """
         assert feature.ndim == 2
         distance, idx = self.index.search(feature, min(self.index.ntotal, 100))
         distance = distance.flatten()
@@ -66,7 +112,6 @@ class LoopDetector:
         locality_mask = ~np.isin(idx, np.arange(self.index.ntotal-10, self.index.ntotal+10))
         idx = idx[locality_mask]
         distance = distance[locality_mask]
-        print(distance, idx)
         if len(distance) > 0:
             if distance[0] < self.threshold and idx[0] not in list(
                 range(self.index.ntotal - 20, self.index.ntotal + 20)
@@ -78,4 +123,7 @@ class LoopDetector:
             return False, None, None
 
     def reset(self) -> None:
+        """
+        Resets the FAISS index, effectively clearing the memory of previously seen images.
+        """
         self.index = faiss.IndexFlatL2(2048)

@@ -74,7 +74,7 @@ def get_feature_matcher():
 
 def get_matches(
     matcher, desc1: np.ndarray, desc2: np.ndarray, ratio_threshold=0.75, top_N=None
-) -> List[cv2.KeyPoint.KeyPoint]:
+) -> List[cv2.KeyPoint]:
     """
     Finds and filters matches between two sets of descriptors based on the ratio test and optionally selects the top N matches.
 
@@ -100,7 +100,7 @@ def get_matches(
     return matches
 
 
-def sort_matches(matches: List, left_kp: List, right_kp: List, left_desc: np.ndarray) -> Tuple[List[cv2.KeyPoint.KeyPoint], List[cv2.KeyPoint.KeyPoint], np.ndarray]:
+def sort_matches(matches: List, left_kp: List, right_kp: List, left_desc: np.ndarray) -> Tuple[List[cv2.KeyPoint], List[cv2.KeyPoint], np.ndarray]:
     """
     Sorts matches and extracts corresponding points and descriptors.
 

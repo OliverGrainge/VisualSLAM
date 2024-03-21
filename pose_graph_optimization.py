@@ -9,6 +9,16 @@ from utils import homogenize, unhomogenize
 def compute_error(
     pose_params: np.ndarray, poses_graph_transformations: List[List[np.ndarray]]
 ):
+    """
+    Computes the residual errors between predicted poses and target poses based on the transformations defined in a pose graph.
+
+    Parameters:
+        pose_params (np.ndarray): A flat array of pose parameters (rotation vector followed by translation vector) for all poses.
+        poses_graph_transformations (List[List[np.ndarray]]): A 2D list of transformation matrices defining the relative poses between poses in the graph.
+
+    Returns:
+        np.ndarray: A flat array of residual errors for rotation and translation vectors.
+    """
     errors = []
     n_poses = len(pose_params) // 6
     poses = [
@@ -30,6 +40,16 @@ def compute_error(
 
 
 def pose2params(poses: List[np.ndarray]):
+    """
+    Converts a list of pose matrices into a flat array of pose parameters.
+
+    Parameters:
+        poses (List[np.ndarray]): A list of 4x4 pose matrices.
+
+    Returns:
+        np.ndarray: A flat array of pose parameters, where each set of six parameters corresponds to the rotation vector and translation vector of a pose.
+    """
+
     params = []
     for pose in poses:
         rvec, tvec = unhomogenize(pose)
@@ -39,6 +59,15 @@ def pose2params(poses: List[np.ndarray]):
 
 
 def params2pose(pose_params: np.ndarray):
+    """
+    Converts a flat array of pose parameters back into a list of pose matrices.
+
+    Parameters:
+        pose_params (np.ndarray): A flat array of pose parameters, where each set of six parameters corresponds to the rotation vector and translation vector of a pose.
+
+    Returns:
+        List[np.ndarray]: A list of 4x4 pose matrices constructed from the provided pose parameters.
+    """
     n_poses = len(pose_params) // 6
     poses = []
     for idx in range(n_poses):
@@ -54,7 +83,16 @@ def params2pose(pose_params: np.ndarray):
 def optimize_poses(
     poses: List[np.ndarray], pose_graph_transformation: List[List[np.ndarray]]
 ):
-    """Optimize poses given a pose graph and initial guesses for each pose."""
+    """
+    Optimizes poses given an initial guess for each pose and a pose graph defining the relative transformations between poses.
+
+    Parameters:
+        poses (List[np.ndarray]): An initial guess for the poses to be optimized.
+        pose_graph_transformation (List[List[np.ndarray]]): A 2D list of transformation matrices defining the relative poses between poses in the graph.
+
+    Returns:
+        List[np.ndarray]: A list of optimized pose matrices.
+    """
     pose_params = pose2params(poses)
     result = least_squares(
         compute_error, pose_params, args=(pose_graph_transformation,)

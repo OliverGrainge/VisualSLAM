@@ -6,7 +6,26 @@ import utils
 
 
 class Evaluate:
+    """
+    A class to evaluate the performance of stereo odometry against a ground truth dataset.
+    It processes a dataset with a given odometry algorithm and compares the estimated trajectories to the ground truth.
+
+    Attributes:
+        config (dict): Configuration settings obtained from a utility function.
+        dataset: An instance of a dataset class initialized with the configuration settings.
+        odometry: An instance of an odometry algorithm initialized with projection matrices and an initial pose.
+        num_samples (int): The number of samples from the dataset to be evaluated.
+
+    Parameters:
+        odometry: The odometry class to be used for motion estimation.
+        dataset: The dataset class to be used for evaluation.
+        num_samples (int, optional): The number of samples to evaluate. If None, evaluates on the entire dataset.
+    """
     def __init__(self, odometry, dataset, num_samples=None):
+        """
+        Initializes the evaluation process by setting up the dataset, odometry algorithm,
+        and processing the specified number of images.
+        """
         self.config = utils.get_config()
         self.dataset = dataset(self.config)
         left_proj, right_proj = self.dataset.projection_matrix()
@@ -22,9 +41,22 @@ class Evaluate:
 
     @staticmethod
     def translation_vector(pose: np.ndarray) -> np.ndarray:
+        """
+        Extracts the translation vector from a pose matrix.
+
+        Parameters:
+            pose (np.ndarray): A pose matrix from which the translation vector is extracted.
+
+        Returns:
+            np.ndarray: The translation vector of the pose.
+        """
         return pose[:3, 3]
 
     def view_trajectories(self):
+        """
+        Visualizes the ground truth and estimated trajectories in a 3D plot. Additionally,
+        it computes and displays the mean absolute error (MAE) between the ground truth and estimated trajectories.
+        """
         gt = self.dataset.ground_truth()
         gt_pose = np.array([self.translation_vector(pose) for pose in gt])
         pose_graph = self.odometry.get_trajectory()
@@ -75,5 +107,16 @@ class Evaluate:
         # Show plot
         plt.show()
 
-    def trajectory_error(self):
-        pass
+    def tracking_mae(self):
+        """
+        Computes the Mean Absolute Error (MAE) between the ground truth and estimated trajectories.
+
+        Returns:
+            float: The mean absolute error of the tracking.
+        """
+        tracked_pose = np.array([self.translation_vector(pose) for pose in pose_graph])
+        gt_pose = np.array([self.translation_vector(pose) for pose in gt])
+        total_error = np.mean(
+            np.abs(gt_pose[: self.num_samples] - tracked_pose[: self.num_samples])
+        )
+        return total_error
