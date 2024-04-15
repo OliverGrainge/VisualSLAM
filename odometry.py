@@ -359,7 +359,10 @@ class StereoOdometry:
         # fill the graph with loop closures
         print("========================= ", len(self.loop_closures), "  Loop Closures ==============")
         for lc in self.loop_closures: 
-            pose_graph[lc[0]][lc[1]] = lc[2]
+            print(len(lc))
+            print(type(lc))
+            print(lc)
+            pose_graph[lc[0]-1][lc[1]] = lc[2]
 
         opt_poses = optimize_poses(self.poses, pose_graph)
         self.poses = opt_poses
