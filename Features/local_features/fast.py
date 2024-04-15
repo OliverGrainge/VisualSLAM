@@ -5,12 +5,13 @@ import numpy as np
 from PIL import Image
 
 
-class ORB:
+class FAST:
     def __init__(self):
-        self.orb = cv2.ORB_create()
+        self.fast = cv2.FastFeatureDetector_create()
+        self.dtype = np.uint8
 
     def __call__(self, image: Image.Image) -> Tuple:
         image.convert("L")
         image = np.array(image)
-        kp, des = self.orb.detectAndCompute(image, None)
+        kp, des = self.fast.detectAndCompute(image, None)
         return kp, des

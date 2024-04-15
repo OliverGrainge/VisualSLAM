@@ -1,9 +1,10 @@
-import cv2 
+from typing import List
+
+import cv2
 import numpy as np
-from typing import List 
 
 
-class BinaryMatcher: 
+class BinaryMatcher:
     def __init__(self, lowes_ratio=0.75):
         self.bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
         self.lowes_ratio = lowes_ratio

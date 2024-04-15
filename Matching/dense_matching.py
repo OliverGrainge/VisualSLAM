@@ -1,9 +1,10 @@
-import cv2 
-import numpy as np 
-from typing import List 
+from typing import List
+
+import cv2
+import numpy as np
 
 
-class DenseMatcher: 
+class DenseMatcher:
     def __init__(self, lowes_ratio=0.75):
         self.bf = cv2.BFMatcher(crossCheck=True)
         self.lowes_ratio = lowes_ratio
