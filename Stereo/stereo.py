@@ -1,11 +1,17 @@
 from PIL import Image
 import numpy as np
-from typing import List
+from typing import List, Union
 
 class StereoPoint: 
-    def __init__(self, image: Image.Image, right_image: Image.Image, T: np.ndarray):
+    def __init__(self, image: Image.Image, right_image: Image.Image, T: np.ndarray, K: np.ndarray, pose: Union[None, np.ndarray]=None):
+        # imaging data and calibrations
         self.image = image 
         self.right_image = right_image
+        self.K = K 
+        self.T = T
+
+        # pose of self.image
+        self.pose = pose
 
         # 2d features
         self.keypoints_2d = None 
