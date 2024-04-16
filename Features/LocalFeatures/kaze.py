@@ -5,28 +5,29 @@ import numpy as np
 from PIL import Image
 
 
-class AKAZE:
+class KAZE:
     def __init__(self):
-        self.akaze = cv2.AKAZE_create()
+        self.kaze = cv2.KAZE_create()
         self.dtype = np.float32
 
     def __call__(self, image: Image.Image) -> Tuple:
         image.convert("L")
         image = np.array(image)
-        kp, des = self.akaze.detectAndCompute(image, None)
+        kp, des = self.kaze.detectAndCompute(image, None)
         return kp, des
 
 
 
-class AKAZEBlocks:
-    def __init__(self):
-        self.akaze = cv2.FastFeatureDetector_create()
-        self.dtype = np.uint8
+class KAZEBlocks:
+    def __init__(self, grid_size=(6, 8)):
+        self.kaze = cv2.KAZE_create()
+        self.grid_size = grid_size
+        self.dtype = np.float32
 
     def __call__(self, image: Image.Image) -> Tuple:
         image.convert("L")
         image = np.array(image)
-        height, width = image.shape
+        height, width, channels = image.shape
         block_height = height // self.grid_size[0]
         block_width = width // self.grid_size[1]
 
@@ -46,11 +47,10 @@ class AKAZEBlocks:
 
                 mask = np.zeros((height, width), dtype=np.uint8)
                 mask[start_y:end_y, start_x:end_x] = 255
-                keypoints, descriptors = self.fast.detectAndCompute(image, mask)
-                
+                keypoints, descriptors = self.kaze.detectAndCompute(image, mask)
                 keypoints_all.extend(keypoints)
                 if descriptors is not None:
-                    if descriptors_all == []:
+                    if len(descriptors_all) == 0:
                         descriptors_all = descriptors
                     else:
                         descriptors_all = np.vstack((descriptors_all, descriptors))

@@ -4,7 +4,6 @@ import cv2
 import numpy as np
 
 
-
 class BinaryMatcher:
     def __init__(self, lowes_ratio=0.75):
         self.bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
