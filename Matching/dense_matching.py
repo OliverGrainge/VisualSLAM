@@ -15,4 +15,5 @@ class DenseMatcher:
         for m, n in matches:
             if m.distance < self.lowes_ratio * n.distance:
                 good_matches.append(m)
-        return matches
+        good_matches = sorted(good_matches, key= lambda x: x.distance)
+        return good_matches

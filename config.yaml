@@ -1,0 +1,5 @@
+
+
+
+feature_detector: "SIFT" 
+feature_matcher: "DenseMatcher"
