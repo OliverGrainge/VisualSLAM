@@ -17,7 +17,6 @@ class KAZE:
         return kp, des
 
 
-
 class KAZEBlocks:
     def __init__(self, grid_size=(6, 8)):
         self.kaze = cv2.KAZE_create()

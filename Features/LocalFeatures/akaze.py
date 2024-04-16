@@ -17,7 +17,6 @@ class AKAZE:
         return kp, des
 
 
-
 class AKAZEBlocks:
     def __init__(self, grid_size=(6, 8)):
         self.akaze = cv2.AKAZE_create()

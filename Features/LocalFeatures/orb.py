@@ -17,7 +17,6 @@ class ORB:
         return kp, des
 
 
-
 class ORBBlocks:
     def __init__(self, grid_size=(6, 8)):
         self.orb = cv2.ORB_create()
