@@ -58,7 +58,7 @@ class StereoPoint:
         self.T = T  # trasformation between left and right image image
 
         # pose of self.image
-        self.X = X  # pose of camera in homogenous co-ordinates
+        self.X = X  # pose of camera in homogenous co-ordinates (4x4 matrix)
 
         # 2d features
         self.keypoints_2d = None
@@ -72,6 +72,30 @@ class StereoPoint:
         # feature extraction
         self.feature_detector = get_feature_detector()
         self.feature_matcher = get_feature_matcher()
+
+    def transform_points3d(self):
+        """
+        Transforms the 3D keypoints based on the camera's pose. This method applies the pose transformation 
+        matrix (self.X) to the 3D keypoints (self.keypoints_3d) to convert them from the camera coordinate 
+        system to the world coordinate system or vice versa, depending on the definition of self.X.
+
+        The transformation is done in homogeneous coordinates to accommodate translation. This method 
+        assumes that self.X is a valid 4x4 homogeneous transformation matrix and self.keypoints_3d are
+        the points in 3D space needing transformation.
+
+        Returns:
+            None: The keypoints are transformed in-place, modifying the self.keypoints_3d attribute.
+
+        Raises:
+            AssertionError: If the points are not represented in homogeneous coordinates.
+        """
+        if self.X is None or self.keypoints_3d is None: 
+            return 
+
+        points = np.hstack((self.keypoints_3d, np.ones((len(self.keypoints_3d), 1))))
+        assert points.shape[1] == 4, "points must be represented in homogenous co-ordinates"
+        self.keypoints_3d = np.dot(self.X, self.keypoints_3d.T).T
+        self.keypoints_3d = self.keypoints_3d[:, :3] / self.keypoints_3d[:, 3].reshape(-1, 1)
 
     def compute_features2d(self):
         """
