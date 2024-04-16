@@ -35,7 +35,7 @@ class StereoPoint:
         image: Image.Image,
         right_image: Image.Image,
         T: np.ndarray,
-        Kl: np.ndarray,
+        K: np.ndarray,
         Kr: np.ndarray,
         X: Union[None, np.ndarray] = None,
     ):
@@ -53,7 +53,7 @@ class StereoPoint:
         # imaging data and calibrations
         self.image = image  # left PIL image of stereo camera
         self.right_image = right_image  # right PIL image of stereo camera
-        self.Kl = Kl  # intrinsic parameters of left camera
+        self.K = K  # intrinsic parameters of left camera
         self.Kr = Kr  # intrinsc parameters of right camera
         self.T = T  # trasformation between left and right image image
 
@@ -130,8 +130,8 @@ class StereoPoint:
         )
 
         rvec, tvec = unhomogenize(self.T)
-        Pl = projection_matrix(rvec=np.zeros(3), tvec=np.zeros(3), K=self.Kr)
-        Pr = projection_matrix(rvec=rvec, tvec=tvec, K=self.Kl)
+        Pl = projection_matrix(rvec=np.zeros(3), tvec=np.zeros(3), K=self.K)
+        Pr = projection_matrix(rvec=rvec, tvec=tvec, K=self.Kr)
         points_3d_hom = cv2.triangulatePoints(Pl, Pr, left_kp, right_kp)
         points_3d = points_3d_hom[:3] / points_3d_hom[3]
 
