@@ -2,6 +2,6 @@
 
 # Configuration for the SLAM pipeline 
 # See the READ.md for conigurations 
-
+datasets_directory: "/Users/olivergrainge/Documents/Github/Datasets"
 feature_detector: "SIFT" 
 feature_matcher: "DenseMatcher"

@@ -2,7 +2,7 @@ from typing import List
 
 import numpy as np
 from PIL import Image
-from utils import get_feature_detector, get_feature_matcher
+from ..utils import get_feature_detector, get_feature_matcher
 
 
 class RgbdPoint:
@@ -40,7 +40,7 @@ class RgbdPoint:
 
         # camera parameters 
         self.K = K # intrinsic calibration parameters
-        self.X = # extrinsic transformation in world co-ordinates
+        self.X = None# extrinsic transformation in world co-ordinates
 
         # 2d features
         self.keypoints_2d = None
@@ -55,6 +55,14 @@ class RgbdPoint:
         self.feature_detector = get_feature_detector()
         self.feature_matcher = get_feature_matcher()
 
+
+    def set_position(self, X: np.ndarray): 
+        assert X.shape[0] == 4 
+        assert X.shape[1] == 4
+        self.X = X
+        self.transform_points3d()
+
+        
     def transform_points3d(self):
         """
         Transforms the 3D keypoints based on the camera's pose. This method applies the pose transformation 

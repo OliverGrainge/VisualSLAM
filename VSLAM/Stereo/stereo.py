@@ -2,9 +2,8 @@ from typing import List, Union
 
 import numpy as np
 from PIL import Image
-from utils import get_feature_detector, get_feature_matcher
+from ..utils import get_feature_detector, get_feature_matcher, projection_matrix, homogenize, unhomogenize
 import cv2 
-from utils import projection_matrix, homogenize, unhomogenize
 
 
 class StereoPoint:
@@ -34,7 +33,8 @@ class StereoPoint:
         self,
         image: Image.Image,
         right_image: Image.Image,
-        T: np.ndarray,
+        P: np.ndarray,
+        Pr: np.ndarray,
         K: np.ndarray,
         Kr: np.ndarray,
         X: Union[None, np.ndarray] = None,
@@ -55,10 +55,14 @@ class StereoPoint:
         self.right_image = right_image  # right PIL image of stereo camera
         self.K = K  # intrinsic parameters of left camera
         self.Kr = Kr  # intrinsc parameters of right camera
-        self.T = T  # trasformation between left and right image image
+        self.P = P
+        self.Pr = Pr
+        k1, r1, t1, _, _, _, _ = cv2.decomposeProjectionMatrix(self.P)
+        k2, r2, t2, _, _, _, _ = cv2.decomposeProjectionMatrix(self.Pr)
+        self.baseline_distance = np.linalg.norm(t1.flatten() - t2.flatten())
 
         # pose of self.image
-        self.X = X  # pose of camera in homogenous co-ordinates (4x4 matrix)
+        self.x = None  # pose of camera in homogenous co-ordinates (4x4 matrix)
 
         # 2d features
         self.keypoints_2d = None
@@ -72,6 +76,12 @@ class StereoPoint:
         # feature extraction
         self.feature_detector = get_feature_detector()
         self.feature_matcher = get_feature_matcher()
+
+    def set_position(self, x: np.ndarray): 
+        assert x.shape[0] == 4 
+        assert x.shape[1] == 4
+        self.x = x
+        self.transform_points3d()
 
     def transform_points3d(self):
         """
@@ -89,12 +99,12 @@ class StereoPoint:
         Raises:
             AssertionError: If the points are not represented in homogeneous coordinates.
         """
-        if self.X is None or self.keypoints_3d is None: 
+        if self.x is None or self.keypoints_3d is None: 
             return 
 
         points = np.hstack((self.keypoints_3d, np.ones((len(self.keypoints_3d), 1))))
         assert points.shape[1] == 4, "points must be represented in homogenous co-ordinates"
-        self.keypoints_3d = np.dot(self.X, self.keypoints_3d.T).T
+        self.keypoints_3d = np.dot(self.x, self.keypoints_3d.T).T
         self.keypoints_3d = self.keypoints_3d[:, :3] / self.keypoints_3d[:, 3].reshape(-1, 1)
 
     def compute_features2d(self):
@@ -114,7 +124,7 @@ class StereoPoint:
         these to compute 3D coordinates. It also filters out 3D points that are beyond a threshold distance,
         which is a multiple of the stereo baseline. This helps in removing distant and potentially unreliable points.
         """
-        if self.keyspoints_2d is None:
+        if self.keypoints_2d is None:
             kp, des = self.feature_detector(self.image)
             self.keypoints_2d = kp
             self.descriptors_2d = des
@@ -129,15 +139,11 @@ class StereoPoint:
             des2=right_descriptors_2d,
         )
 
-        rvec, tvec = unhomogenize(self.T)
-        Pl = projection_matrix(rvec=np.zeros(3), tvec=np.zeros(3), K=self.K)
-        Pr = projection_matrix(rvec=rvec, tvec=tvec, K=self.Kr)
-        points_3d_hom = cv2.triangulatePoints(Pl, Pr, left_kp, right_kp)
+        points_3d_hom = cv2.triangulatePoints(self.P, self.Pr, left_kp.T, right_kp.T)
         points_3d = points_3d_hom[:3] / points_3d_hom[3]
 
-        baseline = np.linalg.norm(tvec)
-        max_depth = baseline * 9
-        filtered_mask = np.array([True if point[2] < max_depth else False for point in points_3d])
+        max_depth = self.baseline_distance * 40
+        filtered_mask = np.array([True if point[2] < max_depth else False for point in points_3d.T])
         keypoints_3d = points_3d.T
-        self.keypoints_3d = self.keypoints_3d[filtered_mask]
+        self.keypoints_3d = keypoints_3d[filtered_mask]
         self.descriptors_3d = left_des[filtered_mask]

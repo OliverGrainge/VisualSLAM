@@ -10,7 +10,7 @@ def get_config():
 
 def get_feature_matcher(**kwargs):
     config = get_config()
-    module_name = "Matching"
+    module_name = "VSLAM.Matching"
     feature_matcher = __import__(module_name, fromlist=[config["feature_matcher"]])
     feature_matcher = getattr(feature_matcher, config["feature_matcher"])
     return feature_matcher(**kwargs)
@@ -18,13 +18,13 @@ def get_feature_matcher(**kwargs):
 
 def get_feature_detector(**kwargs):
     config = get_config()
-    module_name = "Features.LocalFeatures"
+    module_name = "VSLAM.Features.LocalFeatures"
     feature_detector = __import__(module_name, fromlist=[config["feature_detector"]])
     feature_detector = getattr(feature_detector, config["feature_detector"])
     return feature_detector(**kwargs)
 
 
-def projection_matrix(rvec: np.ndarray, tvec: np.ndarray, k):
+def projection_matrix(rvec: np.ndarray, tvec: np.ndarray, k: np.ndarray):
     assert len(rvec.squeeze()) == 3
     assert len(tvec.squeeze()) == 3
     proj = np.eye(4)[:3, :]
