@@ -33,6 +33,17 @@ def huber_loss(residual, delta=1.0):
         return delta * (np.abs(residual) - 0.5 * delta)
 
 
+def tukey_biweight(residual, c=4.685):
+    if np.abs(residual) <= c:
+        x_c = residual / c
+        return (c**2 / 6) * (1 - (1 - x_c**2)**3)
+    else:
+        return (c**2 / 6)
+
+
+def cauchy_loss(residual, c=2.384):
+    return c**2 / 2 * np.log(1 + (residual / c)**2)
+
 class PoseGraphOptimization:
     def __init__(self, points: List, transformations: List, loop_closures: List, window=4) -> None:
         self.points = points
@@ -52,20 +63,16 @@ class PoseGraphOptimization:
         if pose_graph is not None: 
             poses = self.get_poses()
             params = pose2params(poses)
-            try:
-                result = least_squares(
-                    self.cost_function,
-                    params, 
-                    args=(pose_graph,),
-                )
-                opt_poses = params2pose(result.x)
-                for i, pt in enumerate(self.points[-self.window:]):
-                    if np.linalg.norm(pt.x[:3, 3] - opt_poses[i][:3, 3]) < 0.02:
-                        pt.x = opt_poses[i]
-                        print("optimizing pose")
-            except: 
-                pass
-                
+            result = least_squares(
+                self.cost_function,
+                params, 
+                args=(pose_graph,),
+            )
+            opt_poses = params2pose(result.x)
+            for i, pt in enumerate(self.points[-self.window:]):
+                if np.linalg.norm(pt.x[:3, 3] - opt_poses[i][:3, 3]) < 0.02:
+                    pt.x = opt_poses[i]
+                    print("optimizing pose")
 
     @staticmethod
     def cost_function(params, pose_graph) -> np.ndarray:
@@ -82,6 +89,7 @@ class PoseGraphOptimization:
                     tvec_targ = targ[:3, 3].flatten()
                     errors += [huber_loss(val) for val in (rvec_pred.flatten() - rvec_targ.flatten())]
                     errors += [huber_loss(val) for val in (tvec_pred - tvec_targ)]
+        
         return np.array(errors)
 
 
@@ -90,8 +98,8 @@ class PoseGraphOptimization:
     
     def get_pose_graph(self):
         n = len(self.points[-self.window:])
-        if n < self.window: 
-            return None 
+        if n < self.window : 
+            return None
         
         pose_graph = [[None for _ in range(self.window)] for _ in range(self.window)]
         for i in range(self.window):
@@ -102,8 +110,6 @@ class PoseGraphOptimization:
                         self.points[-self.window:][j]
                     )
                     pose_graph[i][j] = T 
-
-
-        return pose_graph 
+        return pose_graph
 
 
