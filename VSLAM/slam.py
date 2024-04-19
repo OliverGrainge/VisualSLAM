@@ -16,17 +16,18 @@ class VSLAM:
         self.keyframe_insertion = KeyFrameInsertion(self.points)
         #self.loop_closure = EigenPlaces(self.poses)
         #self.bundle_adjustment = BundleAdjustment(self.poses, self.loop_closures)
-        #self.pose_graph_optimization = PoseGraphOptimization(
-        #    self.poses, self.loop_closures
-        #)
+        self.pose_graph_optimization = PoseGraphOptimization(
+            self.points, self.transformations, self.loop_closures
+        )
         self.motion_estimation = MotionEstimation3D2D(self.points, self.transformations)
-        #self.map = PointCloud(self.poses)
+        self.mapping = PointCloud(self.points)
 
     def __call__(self, **kwargs) -> None:
         keyframe = self.keyframe_insertion(**kwargs)
         if keyframe:
             self.motion_estimation()
-        #    self.pose_graph_optimization(local=True)
+            self.mapping()
+            self.pose_graph_optimization()
         #    self.bundle_adjustment(local=True)
 
         #    loop_detection = self.loop_closure(keyframe)
