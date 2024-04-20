@@ -38,19 +38,17 @@ class PointCloud:
                     points_to_add.append(self.points[-1].keypoints_3d[match.queryIdx])
                     descriptors_to_add.append(self.points[-1].descriptors_3d[match.queryIdx])
 
-
             if len(descriptors_to_add) > 0:
                 self.map["local_descriptors"] = np.vstack((self.map["local_descriptors"], np.vstack(descriptors_to_add)))
                 self.map["local_points"] = np.vstack((self.map["local_points"], np.vstack(points_to_add)))
                 self.map["local_ids"] = np.concatenate((self.map["local_ids"], (np.zeros(len(descriptors_to_add)) + self.id)))
                 self.id += 1
-
             if self.id > self.window:
-                idx = np.argmax(self.map["local_idx"]==1)
+                idx = np.argmax(self.map["local_ids"]==1)
                 self.map["local_descriptors"] = self.map["local_descriptors"][idx:]
                 self.map["local_points"] = self.map["local_points"][idx:]
                 self.map["local_ids"] = self.map["local_ids"][idx:]
-                #self.map["local_ids"] = self.map["local_ids"] - 1
+                self.map["local_ids"] = self.map["local_ids"] - 1
                 self.id -= 1
             
 
