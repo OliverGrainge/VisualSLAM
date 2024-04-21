@@ -29,8 +29,8 @@ class VSLAM:
         if keyframe:
             self.motion_estimation()
             self.mapping()
-            self.pose_graph_optimization()
-            #self.bundle_adjustment()
+            #self.pose_graph_optimization()
+            self.bundle_adjustment()
 
         #    loop_detection = self.loop_closure(keyframe)
          #   self.bundle_adjustment(loop_detection)

@@ -4,10 +4,11 @@ import numpy as np
 
 
 class PointCloud:
-    def __init__(self, points: List, map: Dict, matching_threshold=250, window=5) -> None:
+    def __init__(self, points: List, map: Dict, matching_threshold=250, window: int=2, max_map_size: int=400) -> None:
         self.points = points
         self.map = map
         self.window = window
+        self.max_map_size = max_map_size
         self.id = 0
 
     def __call__(self):
@@ -24,13 +25,13 @@ class PointCloud:
                     des1=self.points[-1].descriptors_3d,
                     des2=self.map["local_descriptors"],
                     apply_lowe=False
-                )
+                )[:int(self.max_map_size/self.window)]
             else:
                 matches = self.points[-1].feature_matcher(
                     des1=self.points[-1].descriptors_3d,
                     des2=self.map["local_descriptors"],
                     apply_lowe=False
-                )
+                )[:int(self.max_map_size/self.window)]
 
             points_to_add = []
             descriptors_to_add = []
