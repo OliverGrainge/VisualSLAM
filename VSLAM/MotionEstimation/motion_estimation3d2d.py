@@ -57,10 +57,11 @@ class MotionEstimation3D2D:
         )
         if not success:
             raise Exception("PnP algorithm failed")
+            
         T = np.linalg.inv(homogenize(rotation_vector, translation_vector))
         self.transformations.append(T)
         new_pose = self.points[-2].x @ T
-        self.points[-1].x = new_pose
+        self.points[-1].set_pose(new_pose)
 
 
 

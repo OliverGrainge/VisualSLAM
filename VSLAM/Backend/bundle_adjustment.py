@@ -19,8 +19,7 @@ def pointspose2params(poses: List, points: np.ndarray) -> Tuple[np.ndarray, int]
         params += list(rvec.flatten())
         params += list(tvec.flatten())
     params += list(points.flatten())
-    n_poses = len(poses)
-    return np.array(params), n_poses
+    return np.array(params)
 
 
 def params2posepoints(params: np.ndarray, n_poses) -> List[np.ndarray]:
@@ -54,8 +53,11 @@ def cauchy_loss(residual, c=2.384):
     return c**2 / 2 * np.log(1 + (residual / c)**2)
 
 
+
+
+
 class BundleAdjustment:
-    def __init__(self, points: List, map: Dict, loop_closures: List, window: int = 5) -> None:
+    def __init__(self, points: List, map: Dict, loop_closures: List, window: int = 10) -> None:
         self.points = points
         self.loop_closures = loop_closures
         self.window = window
@@ -69,32 +71,38 @@ class BundleAdjustment:
         # k = the frame
         # i = the point 
         # j = the point in 3d 
-        des3d = self.map["local_descriptors"]
+        des3d = self.map["local_descriptors"][:50]
+        print("============================== MAP SIZE", len(des3d))
         corr = []
-        for k, frame in enumerate(self.points[-self.window:]):
+
+        for frame in self.points[-self.window:]:
             matches = frame.feature_matcher(
                 des1=des3d,
                 des2=frame.descriptors_2d,
                 apply_lowe=True
             )
-            for match in matches:
+            point_corr = []
+            for match in matches[:40]:
                 j = match.queryIdx
                 i = match.trainIdx
-                corr.append([k, i, j])
+                point_corr.append([i, j])
+            corr.append(np.array(point_corr))
         return corr
 
 
     def cost_function(self, params, corr, n_poses, frames):
         errors = []
         poses, points = params2posepoints(params, n_poses)
-        for idx, match in enumerate(corr):
-            rvec, tvec = unhomogenize(poses[match[0]])
-            #point3d = frames[match[0]].transform_points3d(points[match[2]][None, :])
-            point3d = points[match[2]]
-            point2d = np.array(frames[match[0]].keypoints_2d[match[1]].pt)
-            proj, _ = cv2.projectPoints(point3d.reshape(3, 1), rvec, tvec, frames[match[0]].K, np.zeros(5))
-            errors += [huber_loss(val) for val in point2d.flatten() - proj.flatten()]
-        #print(np.mean(errors), np.median(errors), np.min(errors), np.max(errors))
+        for idx, frame_match in enumerate(corr):
+            rvec, tvec = unhomogenize(poses[idx])
+            point3d = points[frame_match[:, 1]]
+            point2d = np.array([frames[idx].keypoints_2d[i].pt for i in frame_match[:, 0]])
+            proj, _ = cv2.projectPoints(point3d.T, rvec, tvec, frames[idx].K, np.zeros(5))
+            res = point2d.flatten() - proj.flatten()
+            for val in res: 
+                if np.abs(val) < 10:
+                    errors.append(huber_loss(val))
+       # print(np.mean(errors), np.min(errors), np.max(errors))
         return np.array(errors)
 
 
@@ -110,10 +118,12 @@ class BundleAdjustment:
         corr = self.data_assosiation()
         poses = [frame.x for frame in self.points[-self.window:]]
         n_poses = len(poses)
-        points = self.map["local_points"]
-        params, n_points = pointspose2params(poses, points)
+        points = self.map["local_points"][:50]
+        params = pointspose2params(poses, points)
+
         
         self.cost_function(params, corr, n_poses, self.points[-self.window:])
+        
         
         result = least_squares(
             self.cost_function,
@@ -124,13 +134,21 @@ class BundleAdjustment:
                 self.points[-self.window:],
 
             ), 
-            method='lm'
-                
+            max_nfev=1,
+            verbose=1,
+            #method='lm',
+            #ftol=1e-2   
         )
         
-        #new_poses, new_points = params2posepoints(params, n_poses)
-        #print(np.allclose(poses[0].flatten(), new_poses[0].flatten()))
 
+        new_poses, new_points = params2posepoints(result.x, n_poses)
+        self.map["local_points"][:50] = new_points
+        for idx, point in enumerate(self.points[-self.window:]):
+            movement = np.linalg.norm(point.x[:3, 3] - new_poses[idx][:3, 3])
+            if movement < 0.1:
+                print("optimizing pose")
+                point.x = new_poses[idx]
+        #print(np.allclose(poses[0].flatten(), new_poses[0].flatten()))
 
 
 

@@ -77,29 +77,23 @@ class StereoPoint:
         self.feature_detector = get_feature_detector()
         self.feature_matcher = get_feature_matcher()
 
-    def set_position(self, x: np.ndarray): 
+    def set_pose(self, x: np.ndarray): 
         assert x.shape[0] == 4 
         assert x.shape[1] == 4
         self.x = x
-        self.transform_points3d()
 
-    def transform_points3d(self, points3d: np.ndarray):
-        if self.x is None or self.keypoints_3d is None: 
-            return 
+    @staticmethod
+    def transform_points3d(points: np.ndarray, T: np.ndarray): 
+        T = np.linalg.inv(T)
+        if points.shape[1] != 3:
+            raise ValueError("Points matrix must be of shape [N, 3]")
+        if T.shape != (4, 4):
+            raise ValueError("Transformation matrix must be of shape [4, 4]")
 
-        if points3d is not None: 
-            pts = points3d
-        else: 
-            pts = self.keypoints_3d
-
-        points = np.hstack((pts, np.ones((len(pts), 1))))
-        assert points.shape[1] == 4, "points must be represented in homogenous co-ordinates"
-        new_pts = np.dot(self.x, points.T).T
-        new_pts = new_pts[:, :3] / new_pts[:, 3].reshape(-1, 1)
-        if points3d is None: 
-            self.keypoints_3d = new_pts 
-        else: 
-            return new_pts
+        ones = np.ones((points.shape[0], 1))
+        homogeneous_points = np.hstack((points, ones))
+        transformed_points = homogeneous_points @ T.T
+        return transformed_points[:, :3]
 
     def compute_features2d(self):
         """
