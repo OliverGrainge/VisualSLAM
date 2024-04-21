@@ -4,7 +4,7 @@ import numpy as np
 
 
 class PointCloud:
-    def __init__(self, points: List, map: Dict, matching_threshold=250, window: int=2, max_map_size: int=400) -> None:
+    def __init__(self, points: List, map: Dict, matching_threshold=250, window: int=3, max_map_size: int=100) -> None:
         self.points = points
         self.map = map
         self.window = window

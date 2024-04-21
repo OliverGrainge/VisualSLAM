@@ -57,7 +57,7 @@ def cauchy_loss(residual, c=2.384):
 
 
 class BundleAdjustment:
-    def __init__(self, points: List, map: Dict, loop_closures: List, window: int = 2) -> None:
+    def __init__(self, points: List, map: Dict, loop_closures: List, window: int = 3) -> None:
         self.points = points
         self.loop_closures = loop_closures
         self.window = window
@@ -116,9 +116,7 @@ class BundleAdjustment:
                 point2d = np.array([frames[idx].keypoints_2d[i].pt for i in frame_match[:, 0]])
                 proj, _ = cv2.projectPoints(point3d.T, rvec, tvec, frames[idx].K, np.zeros(5))
                 res = point2d.flatten() - proj.flatten()
-                for val in res: 
-                    loss = huber_loss(val)
-                    errors.append(loss)
+                errors += [huber_loss(val) for val in res]
             #errors += [huber_loss(val) for val in res]
         #print(np.mean(errors), np.median(errors), np.min(errors), np.max(errors))
         #print(len(errors))
@@ -157,8 +155,7 @@ class BundleAdjustment:
 
             ), 
             verbose=1,
-            max_nfev=20,
-            #method='lm',
+            max_nfev=5,
             #ftol=1e-2   
         )
         
