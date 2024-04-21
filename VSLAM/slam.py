@@ -17,7 +17,7 @@ class VSLAM:
 
         self.keyframe_insertion = KeyFrameInsertion(self.points)
         #self.loop_closure = EigenPlaces(self.poses)
-        #self.bundle_adjustment = BundleAdjustment(self.poses, self.loop_closures)
+        self.bundle_adjustment = BundleAdjustment(self.points, self.map, self.loop_closures)
         self.pose_graph_optimization = PoseGraphOptimization(
             self.points, self.transformations, self.loop_closures
         )
@@ -30,7 +30,7 @@ class VSLAM:
             self.motion_estimation()
             self.mapping()
             #self.pose_graph_optimization()
-        #    self.bundle_adjustment(local=True)
+            self.bundle_adjustment()
 
         #    loop_detection = self.loop_closure(keyframe)
          #   self.bundle_adjustment(loop_detection)
