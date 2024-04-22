@@ -57,7 +57,7 @@ def cauchy_loss(residual, c=2.384):
 
 
 class BundleAdjustment:
-    def __init__(self, points: List, map: Dict, loop_closures: List, window: int = 3) -> None:
+    def __init__(self, points: List, map: Dict, loop_closures: List, window: int = 1) -> None:
         self.points = points
         self.loop_closures = loop_closures
         self.window = window
@@ -67,10 +67,7 @@ class BundleAdjustment:
     def data_assosiation(self):
         if len(self.points[-self.window:]) < self.window:
             return None
-        # k, i, j
-        # k = the frame
-        # i = the point 
-        # j = the point in 3d 
+
         des3d = self.map["local_descriptors"]
         points3d = self.map["local_points"]
 
@@ -88,14 +85,17 @@ class BundleAdjustment:
 
             rvec, tvec = unhomogenize(frame.x)
             proj_points, _ = cv2.projectPoints(points3d_matched, rvec, tvec, frame.K, np.zeros(5))
-            res = np.abs(proj_points - points2d_matched)
-            
-        
-            H, inliers = cv2.findHomography(proj_points, points2d_matched, cv2.RANSAC, 0.2)
-            res = np.abs(proj_points[inliers.flatten().astype(bool)] - points2d_matched[inliers.flatten().astype(bool)])
+            residuals = np.linalg.norm(np.abs(proj_points.squeeze() - points2d_matched), axis=1)
+            mask = []
+            for res in residuals:
+                if res < 5.0:
+                    mask.append(True)
+                else: 
+                    mask.append(False)
+            mask = np.array(mask)
 
-            if len(inliers) > 0:
-                for match in matches[inliers.flatten().astype(bool)]:
+            if len(mask) > 0:
+                for match in matches[mask]:
                     j = match.queryIdx
                     i = match.trainIdx
                     point_corr.append([i, j])
@@ -117,18 +117,12 @@ class BundleAdjustment:
                 proj, _ = cv2.projectPoints(point3d.T, rvec, tvec, frames[idx].K, np.zeros(5))
                 res = point2d.flatten() - proj.flatten()
                 errors += [huber_loss(val) for val in res]
-            #errors += [huber_loss(val) for val in res]
-        #print(np.mean(errors), np.median(errors), np.min(errors), np.max(errors))
-        #print(len(errors))
         return np.array(errors)
 
 
     def __call__(
         self, loop_detection: Union[np.ndarray, bool] = False, window: Union[None, int] = None
     ) -> None:
-        """
-        performs
-        """
         if len(self.points[-self.window:]) < self.window:
             return
         
@@ -137,13 +131,6 @@ class BundleAdjustment:
         n_poses = len(poses)
         points = self.map["local_points"]
         params = pointspose2params(poses, points)
-
-        
-        errors = self.cost_function(params, corr, n_poses, self.points[-self.window:])
-        import matplotlib.pyplot as plt
-        #plt.figure() 
-        #plt.hist(errors, bins=100)
-
         
         result = least_squares(
             self.cost_function,
@@ -152,26 +139,17 @@ class BundleAdjustment:
                 corr, 
                 n_poses,
                 self.points[-self.window:],
-
             ), 
             verbose=1,
-            max_nfev=5,
-            #ftol=1e-2   
+            max_nfev=20,
+            ftol=1e-2,
         )
         
-        errors = self.cost_function(result.x, corr, n_poses, self.points[-self.window:])
-        
-        #plt.figure()
-        #plt.hist(errors, bins=100)
-        #plt.show()
+
         new_poses, new_points = params2posepoints(result.x, n_poses)
         self.map["local_points"] = new_points
         for idx, point in enumerate(self.points[-self.window:]):
-            movement = np.linalg.norm(point.x[:3, 3] - new_poses[idx][:3, 3])
-            #if movement < 0.1:
-                #print("optimizing pose")
             point.x = new_poses[idx]
-        #print(np.allclose(poses[0].flatten(), new_poses[0].flatten()))
 
 
 
